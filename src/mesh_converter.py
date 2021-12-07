@@ -31,27 +31,37 @@ import meshio
 from dolfin import *
 import numpy as np
 
-class Meshio_msh2xdmf:
+class MeshioMsh2Xdmf:
     """ Convert a mesh in GMSH file format .msh to a FEniCS readable .xdmf mesh by using meshio """
     def __init__(self,dimension,msh_file,extras=''):
         self.dimension = dimension
         self.msh_file = msh_file
-        self.msh_mesh = meshio.read(self.msh_file+".msh")
+        if (MPI.rank(MPI.comm_world)==0):
+            self.msh_mesh = meshio.read(self.msh_file+".msh")
+        else:
+            self.msh_mesh = None
+        self.msh_mesh = MPI.comm_world.bcast(self.msh_mesh, root=0)
         self.extras = extras
         #self.write_xdmf_mesh()
         #self.read_xdmf_mesh()
         
-    def make_meshio_mesh(self,cell_type,prune_z=False):
+    def make_meshio_mesh(self,cell_type,point_data={},prune_z=False):
         cells = np.vstack([cell.data for cell in self.msh_mesh.cells if cell.type==cell_type])
-        cell_data = np.hstack([self.msh_mesh.cell_data_dict["gmsh:physical"][key]
-        for key in self.msh_mesh.cell_data_dict["gmsh:physical"].keys() if key==cell_type])
+        if "gmsh:physical" in self.msh_mesh.cell_data_dict.keys():
+            cell_data = np.hstack([self.msh_mesh.cell_data_dict["gmsh:physical"][key]
+                                   for key in self.msh_mesh.cell_data_dict["gmsh:physical"].keys() if key==cell_type])
         # Remove z-coordinates from mesh if we have a 2D cell and all points have the same third coordinate
         points= self.msh_mesh.points
         if prune_z:
             points = points[:,:2]
-        self.meshio_mesh = meshio.Mesh(points=points, cells={cell_type: cells}, cell_data={"grains":[cell_data]})
-
-    def write_xdmf_mesh(self):
+        if "gmsh:physical" in self.msh_mesh.cell_data_dict.keys():
+            self.meshio_mesh = meshio.Mesh(points=points, cells={cell_type: cells}, point_data=point_data, cell_data={"grains":[cell_data]})
+        else:
+            self.meshio_mesh = meshio.Mesh(points=points, cells={cell_type: cells}, point_data=point_data)
+            
+    def write_xdmf_mesh(self,out='', point_data={}):
+        if (out==''):
+            out = self.msh_file
         if (self.dimension == 2):
             prune_z=True
             if ('quad' in self.extras):
@@ -64,9 +74,10 @@ class Meshio_msh2xdmf:
                 elttype = 'hexahedron'
             else:
                 elttype = 'tetra'
-        self.make_meshio_mesh(elttype, prune_z=prune_z)
+        self.make_meshio_mesh(elttype, point_data=point_data, prune_z=prune_z)
         if (MPI.rank(MPI.comm_world)==0):
-            meshio.write("%s.xdmf" % self.msh_file, self.meshio_mesh)
+            meshio.write("%s.xdmf" % out, self.meshio_mesh)
+        #meshio.xdmf.write("%s.xdmf" % out, self.meshio_mesh)
         
     def read_xdmf_mesh(self):
         xdmf_file = XDMFFile(MPI.comm_world, "%s.xdmf" % self.msh_file)
@@ -76,7 +87,8 @@ class Meshio_msh2xdmf:
         
         # make MeshFunction for grains subdomains
         self.mvc = MeshValueCollection("size_t", self.mesh, self.mesh_dim) 
-        xdmf_file.read(self.mvc, "grains")
+        if "gmsh:physical" in self.msh_mesh.cell_data_dict.keys():
+            xdmf_file.read(self.mvc, "grains")
         self.mf = cpp.mesh.MeshFunctionSizet(self.mesh, self.mvc)
         #self.dx = Measure("dx", domain=self.mesh, subdomain_data=self.mf)
         self.dx = Measure("dx", subdomain_data=self.mf)

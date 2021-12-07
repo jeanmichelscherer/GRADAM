@@ -3,7 +3,7 @@
 """
 Last edited 2021-03-27
 
-Anisotropic polycrystal multiphase field: writing .sol files for MMG remeshing,
+Anisotropic polycrystal multiphase field: class computing metric and writing .sol files for MMG remeshing,
 adapted from phase_field_composites by Jérémy Bleyer,
 https://zenodo.org/record/1188970
 
@@ -26,120 +26,145 @@ _author__ = "Jean-Michel Scherer"
 __license__ = "CC BY-SA 4.0"
 __email__ = "jean-michel.scherer@enpc.fr"
 
-from numpy import linalg as LA
 import os
-import scipy as sp
-import scipy.ndimage
+from dolfin import *
+import numpy as np
+import meshio
+from mpi4py import MPI as pyMPI
+import matplotlib.pyplot as plt
+# import subprocess
 
-#mesh_file = 'mesh_100_crack'
-#sol_file  = open(mesh_file+'.sol','w')
-#node_number = 5585
+class Remesher:
+    def __init__(self,mesh_path='',mesh_file='',sol_file='',alpha=None,delta=None,number_of_nodes_index=None,\
+                 sol_min=None,sol_max=None,save_files=False):
+        self.mesh_path = mesh_path
+        self.mesh_file = mesh_file
+        self.sol_file = sol_file
+        self.alpha = alpha
+        self.delta = delta
+        self.number_of_nodes_index = number_of_nodes_index # index of the nodes number in msh files (depends on msh version)
+        self.sol_min = sol_min
+        self.sol_max = sol_max
+        self.save_files = save_files
 
+    def diffusion(self,v,V):
+        dv = TrialFunction(V)
+        v_ = TestFunction(V)
+        a = dv*v_*dx + self.delta**2*dot(grad(dv), grad(v_))*dx
+        L = v*v_*dx #inner(v, v_)*dx
+        u = Function(V)
+        solve(a == L, u)
+        return u
+    
+    def metric(self,damage_dim,d,Vd,remeshing_index):       
+        VV = Vd
+        if (damage_dim>1):
+             VV = Vd.sub(0).collapse()
+        diffuse = Function(VV,name="Diffused damage")
+        metric_field = Function(VV,name="v:metric")
+        metric_field.vector()[:] = diffuse.vector()[:]
+        if (damage_dim>1):
+            for k in range(damage_dim):
+                diffuse = self.diffusion(d.sub(k),VV)
+                metric_field.vector()[:] = np.maximum(metric_field.vector()[:], diffuse.vector()[:]) #element wise maximum #or # += diffuse.compute_vertex_values() #sum
+        else: 
+            diffuse = self.diffusion(d,VV)
+            metric_field.vector()[:] = np.maximum(metric_field.vector()[:], diffuse.vector()[:])
+        mini, maxi = min(metric_field.vector()), max(metric_field.vector())
+        pyMPI.COMM_WORLD.barrier()
+        mini, maxi = pyMPI.COMM_WORLD.allreduce(mini, op=pyMPI.MIN), pyMPI.COMM_WORLD.allreduce(maxi, op=pyMPI.MAX)
+        metric_field.vector()[:] = (metric_field.vector()[:] - mini)/(max(maxi - mini,1.e-6))
+        xdmf = XDMFFile(pyMPI.COMM_WORLD, self.mesh_path+"metric_%s.xdmf" % remeshing_index)
+        xdmf.write(metric_field)
+        xdmf.close()
+        
+    def write_uniform_sol(self,uniform_metric):
+        s = open(self.mesh_path+self.mesh_file+'_remeshed_0.sol','w')
+        f = open(self.mesh_path+self.mesh_file+'.msh', "r")
+        lines = f.readlines()
+        f.close()
+        i = 0
+        number_of_nodes = 0
+        while (number_of_nodes==0):
+            if lines[i].startswith("$Nodes"):
+                number_of_nodes = int(lines[i+1].split()[self.number_of_nodes_index])
+            i+=1  
+        s.write(\
+        'MeshVersionFormatted 2\n\\n\Dimension 3\n\\n\SolAtVertices\n\%s\n\1 1\n\\n'%number_of_nodes)
+        for i in range(number_of_nodes):
+            s.write('%s\n' % uniform_metric)   
+        s.write('\nEND')    
+        s.close()
 
+    def write_sol(self,metric_field,number_of_nodes,remeshing_index):
+        '''
+        f = open(self.mesh_path+self.mesh_file+'_remeshed_%s.msh' % (remeshing_index-1), "r")
+        lines = f.readlines()
+        f.close()
+        i = 0
+        number_of_nodes = 0
+        while (number_of_nodes==0):
+            if lines[i].startswith("$Nodes"):
+                number_of_nodes = int(lines[i+1].split()[self.number_of_nodes_index])
+            i+=1
+        '''
+        s  = open(self.mesh_path+self.sol_file+'_remeshed_%s.sol' % (remeshing_index-1),'w')
+        s.write('MeshVersionFormatted 2\n\nDimension 3\n\nSolAtVertices\n%s\n1 1\n\n'%number_of_nodes)
+        for i in range(number_of_nodes):
+            #new_sol = min( max( self.sol_max*(1. - 2.*metric_field[i]) , self.sol_min) , self.sol_max )
+            #new_sol = min( max( self.sol_max*(1. - 5.*metric_field[i]) , self.sol_min) , self.sol_max )
+            
+            new_sol = max( self.sol_max*max((1. - self.alpha*metric_field[i]),0.)**0.5 , self.sol_min)
+            s.write( '%s\n' % format(new_sol, '.4f') )   
+        s.write('\nEND')   
+        s.close()
+    
+    def remesh(self,dim,geo_tmpl,nbgrains,remeshing_index):
+        if (remeshing_index==1):
+            self.convert_msh2mesh(dim,remeshing_index-1)      
+        oldmesh = self.mesh_file+"_remeshed_%s" % (remeshing_index-1)
+        newmesh = self.mesh_file+"_remeshed_%s" % (remeshing_index) #+1)
+        medit = ""
+        if (dim==2):
+            medit = "-3dMedit %s" % dim
+        command = "mmg%sd_O3 %s %s" % (dim,medit,self.mesh_path+oldmesh+'.mesh')
+        print("\nCalling MMG to perform remeshing: %s \n" % command )
+        os.system(command)
+        #subprocess.call(["mmg%sd_O3" % dim, "-3dMedit", "%s" % dim,  "%s" % (mesh_path+oldmesh+'.mesh')] )
+        f = open(self.mesh_path+geo_tmpl+'.geo.tmpl','r')
+        lines = f.readlines()
+        f.close()
+        geo = self.mesh_path+geo_tmpl+'.geo'
+        out = open(geo,'w')
+        for line in lines:
+            new_line = line
+            if "!oldmesh" in line:
+                new_line = line.replace("!oldmesh",oldmesh)
+            if "!newmesh" in line:
+                new_line = line.replace("!newmesh",newmesh)
+            if "!nbgrains" in line:
+                new_line = line.replace("!nbgrains",str(nbgrains))
+            out.write(new_line)
+        out.close()
+        print("\nCalling GMSH inline to save MMG output as new mesh and future MMG input\n")
+        os.system("gmsh -%s %s" % (dim,geo))
+        #subprocess.call(["gmsh", "-%s" % dim, "%s" % geo])
+        if (not self.save_files):
+            self.cleanup_files(remeshing_index-1)
 
-def write_uniform_sol(mesh_file,sol_file,number_of_nodes_index,uniform_metric):
-    sol_file  = open(mesh_file+'_remeshed_0.sol','w')
-    f = open(mesh_file+'.msh', "r")
-    lines = f.readlines()
-    i = 0
-    number_of_nodes = 0
-    while (number_of_nodes==0):
-        if lines[i].startswith("$Nodes"):
-            number_of_nodes = int(lines[i+1].split()[number_of_nodes_index])
-        i+=1
-    f.close()
-    
-    sol_file.write(\
-    'MeshVersionFormatted 2\n\
-    \n\
-    Dimension 3\n\
-    \n\
-    SolAtVertices\n\
-    %s\n\
-    1 1\n\
-    \n'
-    %number_of_nodes)
-    
-    for i in range(number_of_nodes):
-        sol_file.write('%s\n' % uniform_metric)
-    
-    sol_file.write('\nEND')
-    
-    sol_file.close()
-
-
-def write_dvar_sol(damage_dim,
-                   mesh_file,
-                   sol_file,
-                   number_of_nodes_index,
-                   metric_field,
-                   sol_min,
-                   sol_max,
-                   remeshing_index):
-    # find number of $Nodes in the mesh
-    f = open(mesh_file+'_remeshed_%s.msh' % (remeshing_index-1), "r")
-    lines = f.readlines()
-    i = 0
-    number_of_nodes = 0
-    while (number_of_nodes==0):
-        if lines[i].startswith("$Nodes"):
-            number_of_nodes = int(lines[i+1].split()[number_of_nodes_index])
-        i+=1
-    f.close()
-
-    #prev_sol_file = open(sol_file+'_remeshed_%s.o.sol' % (remeshing_index-1),'r')
-    #prev_sols = prev_sol_file.readlines()
-
-    sol_file  = open(sol_file+'_remeshed_%s.sol' % (remeshing_index-1),'w')
-    # print("nb =" , number_of_nodes, "remeshing_index = ", remeshing_index)
-    sol_file.write('MeshVersionFormatted 2\n\nDimension 3\n\nSolAtVertices\n%s\n1 1\n\n'%number_of_nodes)
-    
-    #metric_field = metric_field.reshape((number_of_nodes,damage_dim))
-    #metric_field = LA.norm(metric_field,axis=1)
-    
-    # # Apply gaussian filter (not working because of nodes ordering)
-    # #sigma_y = 3.0
-    # #sigma_x = 3.0
-    # sigma = 3.#[sigma_y, sigma_x]
-    # #print(metric_field)
-    # metric_field = sp.ndimage.filters.gaussian_filter(metric_field, sigma, mode='constant')
-    # #print(metric_field)
-
-    for i in range(number_of_nodes):
-        #sol = float(prev_sols[i+9].split()[0])
-        #sol_file.write('%s\n' % (sol*max(0.01,(1.-1000.*metric_field[i]))))
-        #new_sol = min( max( sol*(1.1 - 200.*metric_field[i]) , sol_min) , sol_max )
-        #new_sol = min( max( sol_max*(1. - 200.*metric_field[i]) , sol_min) , sol_max )
-        #new_sol = min( max( sol_max*(1. - 10.*metric_field[i]) , sol_min) , sol_max )
-        #new_sol = min( max( sol_max*(1. - 2.*metric_field[i]) , sol_min) , sol_max )
-        new_sol = min( max( sol_max*(1. - 3.*metric_field[i]) , sol_min) , sol_max )
-        sol_file.write( '%s\n' % new_sol )
-    
-    sol_file.write('\nEND')
-    
-    sol_file.close()
-    
-def remesh(dim,mesh_path,geo_tmpl,mesh_file,nbgrains,remeshing_index):
-    oldmesh = mesh_file+"_remeshed_%s" % (remeshing_index-1)
-    newmesh = mesh_file+"_remeshed_%s" % (remeshing_index) #+1)
-    print("\nCalling MMG to perform remeshing \n")
-    os.system("mmg%sd_O3 -3dMedit %s %s" % (dim,dim,mesh_path+oldmesh+'.mesh') )
-    
-    f = open(mesh_path+geo_tmpl+'.geo.tmpl','r')
-    lines = f.readlines()
-    geo = mesh_path+geo_tmpl+'.geo'
-    out = open(geo,'w')
-    for line in lines:
-        new_line = line
-        if "!oldmesh" in line:
-            new_line = line.replace("!oldmesh",oldmesh)
-        if "!newmesh" in line:
-            new_line = line.replace("!newmesh",newmesh)
-        if "!nbgrains" in line:
-            new_line = line.replace("!nbgrains",str(nbgrains))
-        out.write(new_line)
-    out.close()
-    print("\nCalling GMSH inline to save MMG output as new mesh and future MMG input\n")
-    os.system("gmsh %s" % geo)
-    
-    
+    def convert_msh2mesh(self,dim,remeshing_index):
+        geo = self.mesh_path+'convert_0.geo'
+        c = open(geo,'w')
+        c.write('Merge "%s_remeshed_%s.msh";\n' % (self.mesh_file,remeshing_index))
+        c.write('Save "%s_remeshed_%s.mesh";' % (self.mesh_file,remeshing_index))
+        c.close()
+        os.system("gmsh -%s %s" % (dim,geo))
+        
+    def cleanup_files(self,remeshing_index):
+        files = [f for f in os.listdir(self.mesh_path) if '_'+str(remeshing_index) in f]
+        if (remeshing_index==0):
+            files.remove(self.mesh_file+'_remeshed_0.msh')
+        for f in files:
+            os.system("rm %s%s" % (self.mesh_path,f))
+        #os.system("rm %s*_%s.*" % (self.mesh_path,remeshing_index))
+        

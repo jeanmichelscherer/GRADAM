@@ -11,7 +11,7 @@ from petsc4py import PETSc
 from time import time
 
 class HybridLinearSolver:
-    def __init__(self, a, L, u, p=None, bcs=None, parameters={"iteration_switch": 5},
+    def __init__(self, a, L, u, p=None, bcs=None, parameters={"iteration_switch": 5, "user_switch": True},
                  direct_solver={"solver": "mumps", "type": "cholesky", "blr": True},
                  iterative_solver={"solver": "cg"}, log=True, timings=False):
         self.a = a
@@ -86,7 +86,7 @@ class HybridLinearSolver:
             bv = as_backend_type(b).vec()
 
         uv =  as_backend_type(self.u.vector()).vec()
-        self.ksp.solve(bv, uv)
+        #self.ksp.solve(bv, uv)
         
         try:
             self.ksp.solve(bv, uv)
@@ -103,7 +103,7 @@ class HybridLinearSolver:
         self.u.vector()[:] = uv
         it = self.ksp.getIterationNumber()
         self.print_log("        Converged in  {} iterations.".format(it))
-        self.reuse_preconditioner = it < self.parameters["iteration_switch"]
+        self.reuse_preconditioner = ((it < self.parameters["iteration_switch"]) and self.parameters["user_switch"])
         self.pc.setReusePreconditioner(self.reuse_preconditioner)
         it_direct = 0
         if self.reuse_preconditioner:

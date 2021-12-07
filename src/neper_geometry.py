@@ -32,11 +32,11 @@ import numpy as np
 from dolfin import *
 from .mesh_converter import *
 
-class Neper_geometry:
+class NeperGeometry:
     """ Construct a polycrystal geometry and associated tessellation, mesh, crystal orientations using Neper""" 
     def __init__(self,dimension=2,nbgrains=50,L=1.,W=1.,H=0.,cledge=.75,rcl=.75, \
                  id='0',neper_mesh='out',morpho='voronoi',orientation='uniform', \
-                 symetry='cubic',oriformat='plain',oridescriptor='euler-bunge',extras=''):
+                 symmetry='cubic',oriformat='plain',oridescriptor='euler-bunge',extras=''):
         self.dimension=dimension
         self.nbgrains=nbgrains
         self.L=L
@@ -50,7 +50,7 @@ class Neper_geometry:
         self.file_msh=self.neper_mesh+'.msh'
         self.morpho=morpho
         self.orientation=orientation
-        self.symetry=symetry
+        self.symmetry=symmetry
         self.oriformat=oriformat
         self.oridescriptor=oridescriptor
         self.extras=extras
@@ -109,7 +109,7 @@ class Neper_geometry:
     def make_orientations(self,format='ori'):
         load       = " -loadtess '%s' " % self.file_tess
         ori        = " -ori '%s' " % self.orientation
-        sym        = " -oricrysym '%s' " % self.symetry
+        sym        = " -oricrysym '%s' " % self.symmetry
         oform      = " -oriformat '%s' " % self.oriformat
         form       = " -format '%s' " % format
         descriptor = " -oridescriptor '%s' " % self.oridescriptor
@@ -119,7 +119,7 @@ class Neper_geometry:
         # out_name = file_tess.split('.')[0] + '.%s' % (format)
         # return out_name
     
-    def setup_geometry(self):
+    def setup_geometry(self,make_tess=True,make_mesh=True,make_ori=True):
         if (self.dimension == 2):
             self.shape  = 'square(%s,%s)' % (self.L,self.W)
             self.diameq = 2.*np.sqrt(self.L*self.W/np.pi/self.nbgrains)
@@ -128,18 +128,21 @@ class Neper_geometry:
             self.diameq = 2.*((3./4)*self.L*self.W*self.H/np.pi/self.nbgrains)**(1./3.)
 
         # make microstructure tessellation, mesh and orientations
-        if (not os.path.isfile(self.file_tess)):
+        #if (not os.path.isfile(self.file_tess)):
+        if (make_tess):
             # make tessellation
             self.make_microstructure_tessellation(format='tess,geo')
             # make mesh
-        self.make_microstructure_mesh(format='msh')
+        if make_mesh:
+            self.make_microstructure_mesh(format='msh')
             #self.make_microstructure_mesh(format='geof')
             # make a png picture of the mesh
             #self.make_mesh_picture()
             # make orientations
-        self.make_orientations(format='ori')
+        if make_ori:
+            self.make_orientations(format='ori')
  
-        xdmf = Meshio_msh2xdmf(self.dimension,self.neper_mesh,extras=self.extras)
+        xdmf = MeshioMsh2Xdmf(self.dimension,self.neper_mesh,extras=self.extras)
         xdmf.write_xdmf_mesh()
         xdmf.read_xdmf_mesh()
         self.msh = xdmf.msh_mesh
@@ -150,44 +153,3 @@ class Neper_geometry:
         self.mf = xdmf.mf
         self.dx = xdmf.dx
         self.facets = xdmf.facets  
- 
-        # #neper_mesh = "2D_single_crystal"
-        # # read msh mesh
-        # self.msh = meshio.read(self.neper_mesh+".msh")
-                
-        # # write xdmf mesh
-        # if (self.dimension == 2):
-        #     prune_z=True
-        #     if ('quad' in self.extras):
-        #         elttype = 'quad'
-        #     else:
-        #         elttype = 'triangle'
-        #     self.triangle_mesh = self.make_mesh(elttype, prune_z=prune_z)
-        #     #triangle_mesh = make_mesh(msh, "quad", prune_z=prune_z)
-        #     meshio.write("%s.xdmf" % self.neper_mesh, self.triangle_mesh)
-        # elif (self.dimension == 3):
-        #     prune_z=False
-        #     #triangle_mesh = make_mesh(msh, "triangle", prune_z=prune_z)
-        #     #tetra_mesh = make_mesh(msh, "hexahedron", prune_z=prune_z)
-        #     if ('hex' in self.extras):
-        #         elttype = 'hexahedron'
-        #     else:
-        #         elttype = 'tetra'
-        #     self.tetra_mesh = self.make_mesh(elttype, prune_z=prune_z)
-        #     meshio.write("%s.xdmf" % self.neper_mesh, self.tetra_mesh)
-        
-        # # read xdmf mesh
-        # mesh_file = XDMFFile(MPI.comm_world, "%s.xdmf" % self.neper_mesh)
-        # self.mesh = Mesh()
-        # mesh_file.read(self.mesh);
-        # self.mesh_dim = self.mesh.geometric_dimension()
-        
-        # # make MeshFunction for grains subdomains
-        # self.mvc = MeshValueCollection("size_t", self.mesh, self.mesh_dim) 
-        # mesh_file.read(self.mvc, "grains")
-        # self.mf = cpp.mesh.MeshFunctionSizet(self.mesh, self.mvc)
-        # self.dx = Measure("dx", subdomain_data=self.mf)
-        
-        # # exterior facets MeshFunction
-        # self.facets = MeshFunction("size_t", self.mesh, self.mesh_dim-1)
-        # self.facets.set_all(0)
