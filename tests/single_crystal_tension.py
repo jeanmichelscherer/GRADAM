@@ -29,7 +29,7 @@ __email__ = "jean-michel.scherer@enpc.fr"
 import numpy as np
 from dolfin import *
 from mshr import *
-from src import *
+from gradam import *
 
 set_log_level(40)    # remove unnecessary console outputs
 
