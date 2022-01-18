@@ -12,6 +12,7 @@ import mpl_toolkits.mplot3d.axes3d as axes3d
 from matplotlib import cm
 import sys
 import os
+import gradam
 #from .j_contours_paraview import *
 plt.rc('text', usetex=True)
 plt.rc('font', family='serif')
@@ -36,8 +37,9 @@ class JIntegral:
 
     def compute_J_integral(self, contour, step, time):
         #run_paraview_PP_j_contours(step, self.path, self.input_file, self.x_bot, self.x_top, self.y_bot, self.y_top, self.resolution )
-        cmd = "pvbatch anisotropic_damage/j_contours_paraview.py %s %s %s %s %s %s %s %s %s" %\
-                    (step, self.path, self.input_file, contour, self.x_bot, self.x_top, self.y_bot, self.y_top, self.resolution)
+        gradam_location = gradam.__file__[:-11]
+        cmd = "pvbatch %sj_contours_paraview.py %s %s %s %s %s %s %s %s %s" %\
+                    (gradam_location, step, self.path, self.input_file, contour, self.x_bot, self.x_top, self.y_bot, self.y_top, self.resolution)
         #print("Running: ", cmd)
         os.system(cmd)
         

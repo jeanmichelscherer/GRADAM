@@ -96,7 +96,8 @@ outputxdmfDisplay.SetScalarBarVisibility(renderView1, True)
 renderView1.Update()
 
 # create a new 'Gradient Of Unstructured DataSet'
-gradientOfUnstructuredDataSet1 = GradientOfUnstructuredDataSet(registrationName='GradientOfUnstructuredDataSet1', Input=outputxdmf)
+#gradientOfUnstructuredDataSet1 = GradientOfUnstructuredDataSet(registrationName='GradientOfUnstructuredDataSet1', Input=outputxdmf)
+gradientOfUnstructuredDataSet1 = Gradient(registrationName='GradientOfUnstructuredDataSet1', Input=outputxdmf)
 gradientOfUnstructuredDataSet1.ScalarArray = ['CELLS', 'phi1']
 
 # Properties modified on gradientOfUnstructuredDataSet1
@@ -147,13 +148,16 @@ gradientOfUnstructuredDataSet1Display.SetScalarBarVisibility(renderView1, True)
 renderView1.Update()
 
 # create a new 'Plot Over Line'
-plotOverLine1 = PlotOverLine(registrationName='PlotOverLine1', Input=gradientOfUnstructuredDataSet1,
-    Source='Line')
+plotOverLine1 = PlotOverLine(registrationName='PlotOverLine1', Input=gradientOfUnstructuredDataSet1)#,
+#    Source='Line')
 
 # init the 'Line' selected for 'Source'
-plotOverLine1.Source.Point1 = [x_bot, y_bot, 0.0]
-plotOverLine1.Source.Point2 = [x_top, y_bot, 0.0]
-plotOverLine1.Source.Resolution = resolution
+#plotOverLine1.Source.Point1 = [x_bot, y_bot, 0.0]
+plotOverLine1.Point1 = [x_bot, y_bot, 0.0]
+#plotOverLine1.Source.Point2 = [x_top, y_bot, 0.0]
+plotOverLine1.Point2 = [x_top, y_bot, 0.0]
+#plotOverLine1.Source.Resolution = resolution
+plotOverLine1.Resolution = resolution
 
 # show data in view
 plotOverLine1Display = Show(plotOverLine1, renderView1, 'GeometryRepresentation')
@@ -232,14 +236,16 @@ SaveData(path+'%s_bot_stress_strain_coord_%s.csv' % (contour,step), proxy=plotOv
 SetActiveSource(outputxdmf)
 
 # toggle 3D widget visibility (only when running from the GUI)
-Hide3DWidgets(proxy=plotOverLine1.Source)
+#Hide3DWidgets(proxy=plotOverLine1.Source)
+Hide3DWidgets(proxy=plotOverLine1)
 
 # create a new 'Plot Over Line'
-plotOverLine2 = PlotOverLine(registrationName='PlotOverLine2', Input=outputxdmf,
-    Source='Line')
+plotOverLine2 = PlotOverLine(registrationName='PlotOverLine2', Input=outputxdmf)#,
+#    Source='Line')
 
 # init the 'Line' selected for 'Source'
-plotOverLine2.Source.Point2 = [2.0, 1.0, 0.0]
+#plotOverLine2.Source.Point2 = [2.0, 1.0, 0.0]
+plotOverLine2.Point2 = [2.0, 1.0, 0.0]
 
 # show data in view
 plotOverLine2Display = Show(plotOverLine2, lineChartView1, 'XYChartRepresentation')
@@ -272,7 +278,8 @@ plotOverLine2Display.SeriesMarkerSize = ['Damage_Magnitude', '4', 'Damage_X', '4
 SetActiveSource(outputxdmf)
 
 # toggle 3D widget visibility (only when running from the GUI)
-Hide3DWidgets(proxy=plotOverLine2.Source)
+#Hide3DWidgets(proxy=plotOverLine2.Source)
+Hide3DWidgets(proxy=plotOverLine2)
 
 # hide data in view
 Hide(plotOverLine2, lineChartView1)
@@ -285,13 +292,16 @@ del plotOverLine2
 SetActiveSource(gradientOfUnstructuredDataSet1)
 
 # create a new 'Plot Over Line'
-plotOverLine2 = PlotOverLine(registrationName='PlotOverLine2', Input=gradientOfUnstructuredDataSet1,
-    Source='Line')
+plotOverLine2 = PlotOverLine(registrationName='PlotOverLine2', Input=gradientOfUnstructuredDataSet1)#,
+#    Source='Line')
 
 # init the 'Line' selected for 'Source'
-plotOverLine2.Source.Point1 = [x_top, y_bot, 0.0]
-plotOverLine2.Source.Point2 = [x_top, y_top, 0.0]
-plotOverLine2.Source.Resolution = resolution
+#plotOverLine2.Source.Point1 = [x_top, y_bot, 0.0]
+plotOverLine2.Point1 = [x_top, y_bot, 0.0]
+#plotOverLine2.Source.Point2 = [x_top, y_top, 0.0]
+plotOverLine2.Point2 = [x_top, y_top, 0.0]
+#plotOverLine2.Source.Resolution = resolution
+plotOverLine2.Resolution = resolution
 
 # show data in view
 plotOverLine2Display = Show(plotOverLine2, lineChartView1, 'XYChartRepresentation')
@@ -330,16 +340,20 @@ SaveData(path+'%s_right_stress_strain_coord_%s.csv' % (contour,step), proxy=plot
 SetActiveSource(gradientOfUnstructuredDataSet1)
 
 # toggle 3D widget visibility (only when running from the GUI)
-Hide3DWidgets(proxy=plotOverLine2.Source)
+#Hide3DWidgets(proxy=plotOverLine2.Source)
+Hide3DWidgets(proxy=plotOverLine2)
 
 # create a new 'Plot Over Line'
-plotOverLine3 = PlotOverLine(registrationName='PlotOverLine3', Input=gradientOfUnstructuredDataSet1,
-    Source='Line')
+plotOverLine3 = PlotOverLine(registrationName='PlotOverLine3', Input=gradientOfUnstructuredDataSet1)#,
+#    Source='Line')
 
 # init the 'Line' selected for 'Source'
-plotOverLine3.Source.Point1 = [x_bot, y_top, 0.0]
-plotOverLine3.Source.Point2 = [x_top, y_top, 0.0]
-plotOverLine3.Source.Resolution = resolution
+#plotOverLine3.Source.Point1 = [x_bot, y_top, 0.0]
+plotOverLine3.Point1 = [x_bot, y_top, 0.0]
+#plotOverLine3.Source.Point2 = [x_top, y_top, 0.0]
+plotOverLine3.Point2 = [x_top, y_top, 0.0]
+#plotOverLine3.Source.Resolution = resolution
+plotOverLine3.Resolution = resolution
 
 # show data in view
 plotOverLine3Display = Show(plotOverLine3, lineChartView1, 'XYChartRepresentation')
@@ -378,16 +392,20 @@ SaveData(path+'%s_top_stress_strain_coord_%s.csv' % (contour,step), proxy=plotOv
 SetActiveSource(gradientOfUnstructuredDataSet1)
 
 # toggle 3D widget visibility (only when running from the GUI)
-Hide3DWidgets(proxy=plotOverLine3.Source)
+#Hide3DWidgets(proxy=plotOverLine3.Source)
+Hide3DWidgets(proxy=plotOverLine3)
 
 # create a new 'Plot Over Line'
-plotOverLine4 = PlotOverLine(registrationName='PlotOverLine4', Input=gradientOfUnstructuredDataSet1,
-    Source='Line')
+plotOverLine4 = PlotOverLine(registrationName='PlotOverLine4', Input=gradientOfUnstructuredDataSet1)#,
+#    Source='Line')
 
 # init the 'Line' selected for 'Source'
-plotOverLine4.Source.Point1 = [x_bot, y_bot, 0.0]
-plotOverLine4.Source.Point2 = [x_bot, y_top, 0.0]
-plotOverLine4.Source.Resolution = resolution
+#plotOverLine4.Source.Point1 = [x_bot, y_bot, 0.0]
+plotOverLine4.Point1 = [x_bot, y_bot, 0.0]
+#plotOverLine4.Source.Point2 = [x_bot, y_top, 0.0]
+plotOverLine4.Point2 = [x_bot, y_top, 0.0]
+#plotOverLine4.Source.Resolution = resolution
+plotOverLine4.Resolution = resolution
 
 # show data in view
 plotOverLine4Display = Show(plotOverLine4, lineChartView1, 'XYChartRepresentation')
