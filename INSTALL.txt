@@ -1,0 +1,14 @@
+# Standard Installation
+
+python setup.py build
+python setup.py install
+
+
+# Developer Installation
+
+python setup.py develop
+
+
+# Uninstallation
+
+pip uninstall gradam
