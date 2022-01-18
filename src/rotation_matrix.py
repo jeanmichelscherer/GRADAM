@@ -81,9 +81,9 @@ def make_rotation_matrix_from_euler(dim,
     
     # rotation matrix (sample to crystal, i.e. V_crystal = R*V_sample)
     if dim==2:
-        R = as_matrix([[cos(phi1),sin(phi1), 0.],
-                       [-sin(phi1), cos(phi1), 0.], 
-                       [0.       , 0.       , 1.]])
+        R = as_matrix([[ cos(phi1),  sin(phi1), 0.],
+                       [-sin(phi1),  cos(phi1), 0.], 
+                       [        0.,         0., 1.]])
     else:
         R = as_matrix([[cos(phi1)*cos(phi2)-sin(phi1)*sin(phi2)*cos(Phi), 
                         sin(phi1)*cos(phi2)+cos(phi1)*sin(phi2)*cos(Phi),

@@ -32,15 +32,16 @@ import numpy as np
 import meshio
 from mpi4py import MPI as pyMPI
 import matplotlib.pyplot as plt
+from .hybrid_linear_solver import *
 # import subprocess
 
 class Remesher:
-    def __init__(self,mesh_path='',mesh_file='',sol_file='',alpha=None,delta=None,number_of_nodes_index=None,\
+    def __init__(self,mesh_path='',mesh_file='',sol_file='',beta=None,delta=None,number_of_nodes_index=None,\
                  sol_min=None,sol_max=None,save_files=False):
         self.mesh_path = mesh_path
         self.mesh_file = mesh_file
         self.sol_file = sol_file
-        self.alpha = alpha
+        self.beta = beta
         self.delta = delta
         self.number_of_nodes_index = number_of_nodes_index # index of the nodes number in msh files (depends on msh version)
         self.sol_min = sol_min
@@ -53,10 +54,14 @@ class Remesher:
         a = dv*v_*dx + self.delta**2*dot(grad(dv), grad(v_))*dx
         L = v*v_*dx #inner(v, v_)*dx
         u = Function(V)
-        solve(a == L, u)
+        solver_metric = HybridLinearSolver(a,L,u,bcs=[],parameters={"iteration_switch": 5,"user_switch": True})
+        #solve(a == L, u)
+        if (MPI.rank(MPI.comm_world)==0):
+            print("Solving the pseudo heat equation to compute the remeshing metric field")
+        solver_metric.solve()
         return u
     
-    def metric(self,damage_dim,d,Vd,remeshing_index):       
+    def metric(self,previous_metric,damage_dim,d,Vd,remeshing_index):       
         VV = Vd
         if (damage_dim>1):
              VV = Vd.sub(0).collapse()
@@ -74,9 +79,11 @@ class Remesher:
         pyMPI.COMM_WORLD.barrier()
         mini, maxi = pyMPI.COMM_WORLD.allreduce(mini, op=pyMPI.MIN), pyMPI.COMM_WORLD.allreduce(maxi, op=pyMPI.MAX)
         metric_field.vector()[:] = (metric_field.vector()[:] - mini)/(max(maxi - mini,1.e-6))
+        metric_field.vector()[:] = np.maximum(metric_field.vector()[:], previous_metric.vector()[:])
         xdmf = XDMFFile(pyMPI.COMM_WORLD, self.mesh_path+"metric_%s.xdmf" % remeshing_index)
         xdmf.write(metric_field)
         xdmf.close()
+        return metric_field
         
     def write_uniform_sol(self,uniform_metric):
         s = open(self.mesh_path+self.mesh_file+'_remeshed_0.sol','w')
@@ -113,8 +120,7 @@ class Remesher:
         for i in range(number_of_nodes):
             #new_sol = min( max( self.sol_max*(1. - 2.*metric_field[i]) , self.sol_min) , self.sol_max )
             #new_sol = min( max( self.sol_max*(1. - 5.*metric_field[i]) , self.sol_min) , self.sol_max )
-            
-            new_sol = max( self.sol_max*max((1. - self.alpha*metric_field[i]),0.)**0.5 , self.sol_min)
+            new_sol = max( self.sol_max*max((1. - self.beta*metric_field[i]),0.)**0.5 , self.sol_min)
             s.write( '%s\n' % format(new_sol, '.4f') )   
         s.write('\nEND')   
         s.close()

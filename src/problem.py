@@ -42,7 +42,7 @@ import scipy as sp
 import scipy.ndimage
 import sys
 import subprocess
-import h5py
+#import h5py
 from mpi4py import MPI as pyMPI
 from .j_integral import *
 
@@ -77,6 +77,7 @@ class FractureProblem:
         self.mf = mf
         self.mvc = mvc
         self.u_degree = 1
+        self.d_degree = 1
         self.num_vertices = self.mesh.num_vertices() # NOK in parallel, use metric size instead
         self.facets = facets
         self.dim = mesh.geometric_dimension()
@@ -87,7 +88,7 @@ class FractureProblem:
         self.load = load
         self.bcs = []
         self.bc_d =[]
-        self.Uimp = Expression("t", t=0, degree=0)
+        self.Uimp = [Expression("t", t=0, degree=0)]
         self.incr = 0
         self.incr_save = 1
         self.t = 0.
@@ -109,6 +110,9 @@ class FractureProblem:
         self.results = XDMFFile(MPI.comm_world,self.prefix+"output.xdmf")
         self.results.parameters["flush_output"] = True
         self.results.parameters["functions_share_mesh"] = True
+        self.J_results = XDMFFile(MPI.comm_world,self.prefix+"J_integral.xdmf")
+        self.J_results.parameters["flush_output"] = True
+        self.J_results.parameters["functions_share_mesh"] = True
         self.checkpoints = XDMFFile(MPI.comm_world,self.prefix+"checkpoint.xdmf")
         self.checkpoints.parameters["flush_output"] = True
         self.checkpoints.parameters["functions_share_mesh"] = True
@@ -136,6 +140,8 @@ class FractureProblem:
         self.no_residual_stiffness=[False,0.99]
         self.JIntegral = None
         self.timings = True
+        self.null_space_basis = None
+        self.rigid_body_motion=[]
 
     class BCS():
         def __init__(self, Vu, Vd, facets):
@@ -156,12 +162,14 @@ class FractureProblem:
         # Definition of functions spaces and test/trial functions
         self.Vu = VectorFunctionSpace(self.mesh, "CG", self.u_degree, dim=self.dim)
         if self.mat.damage_dim == 1:
-            self.Vd = FunctionSpace(self.mesh, "CG",1)
+            self.Vd = FunctionSpace(self.mesh, "CG", self.d_degree)
         else:
-            self.Vd = VectorFunctionSpace(self.mesh, "CG",1, dim=self.mat.damage_dim)
-        self.V0 = FunctionSpace(self.mesh, "DG", 0)    
+            self.Vd = VectorFunctionSpace(self.mesh, "CG", self.d_degree, dim=self.mat.damage_dim)
+        self.V0 = FunctionSpace(self.mesh, "DG", 0)
         self.Vsig = TensorFunctionSpace(self.mesh, "CG", 1, shape=(3,3))
         self.VV = VectorFunctionSpace(self.mesh, "DG", 0, dim=3)
+        self.Vr = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3))
+        self.Vmetric = FunctionSpace(self.mesh, "CG", self.d_degree)  
         
         self.u_ = TestFunction(self.Vu)
         self.du = TrialFunction(self.Vu)
@@ -170,10 +178,11 @@ class FractureProblem:
         
         # Definition of functions
         self.u = Function(self.Vu,name="Displacement")
-        self.u_prev = Function(self.Vu,name="Previous displacement")
+        #self.u_prev = Function(self.Vu,name="Previous displacement")
         self.d = Function(self.Vd,name="Damage")
         self.d_prev = Function(self.Vd,name="Previous damage")
-        self.dold = Function(self.Vd,name="Old damage")
+        self.d_prev_iter = Function(self.Vd,name="Previous damage in staggered minimization")
+        #self.dold = Function(self.Vd,name="Old damage")
         self.d_lb = Function(self.Vd,name="Lower bound d_n")
         self.d_ub = Function(self.Vd,name="Damage upper bound") #"Upper bound 1")
         self.d_ar= Function(self.Vd,name="Damage field after remeshing") 
@@ -181,12 +190,13 @@ class FractureProblem:
         self.sig = Function(self.Vsig,name="Stress")
         self.epspos = Function(self.Vsig,name="Strain (+)")
         self.epsneg = Function(self.Vsig,name="Strain (-)")
-        self.V1 = Function(self.VV,name="V1")
-        self.V2 = Function(self.VV,name="V2")
-        self.V3 = Function(self.VV,name="V3")
+        #self.V1 = Function(self.VV,name="V1")
+        #self.V2 = Function(self.VV,name="V2")
+        #self.V3 = Function(self.VV,name="V3")
         # if self.staggered_solver["accelerated"]:
         #     self.tmp_u = Function(self.Vu)
         #     self.tmp_d = Function(self.Vd)
+        self.R = Function(self.Vr,name="Rotation matrix")
         self.P1pos = Function(self.V0,name="P1pos")
         self.P2pos = Function(self.V0,name="P2pos")
         self.P3pos = Function(self.V0,name="P3pos")
@@ -194,12 +204,17 @@ class FractureProblem:
         self.P2pos.interpolate(Constant(1.))
         self.P3pos.interpolate(Constant(1.))
         self.Efrac_field = Function(self.V0,name="Efrac")
-        self.Vd0 = FunctionSpace(self.mesh, "CG",1)
         self.d_eq_fiss = Function(self.Vd,name="deq")
         if self.mat.damage_dim==1:
             self.d_eq_fiss.interpolate(Constant((1.)))
+            self.d_prev_iter.interpolate(Constant(0.))
         else:
             self.d_eq_fiss.interpolate(Constant((1.,)*self.mat.damage_dim))
+            self.d_prev_iter.interpolate(Constant((0.,)*self.mat.damage_dim))
+        #self.Vstiffness = TensorFunctionSpace(self.mesh, "CG", 1, shape=(6,6))
+        #self.stiffness = Function(self.Vstiffness,name="Stiffness")
+        self.metric = Function(self.Vmetric,name="Remeshing metric")
+        self.metric.interpolate(Constant(0.))
             
     def define_external_work(self):
         return dot(self.load,self.u)*self.ds
@@ -209,7 +224,7 @@ class FractureProblem:
         # self.Wel = 0.5*inner(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos),eps(self.u))*self.dx
         self.Wel = 0.5*inner(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos),eps(self.u,self.dim))*self.dx
         
-        self.Efrac = self.mat.fracture_energy_density(self.d)
+        self.Efrac = self.mat.fracture_energy_density(self.d,self.d_prev_iter)
         self.Wfrac = sum(self.Efrac)*self.dx
         self.Wtot = self.Wel + self.Wfrac - self.Wext
 
@@ -244,12 +259,19 @@ class FractureProblem:
         self.D2W_d = derivative(self.DW_d,self.d,self.dd)
 
     def set_problems(self):
+        if not self.rigid_body_motion==[]:
+            null_space = [interpolate(n, self.Vu).vector() for n in self.rigid_body_motion]
+            # Make into unit vectors
+            [normalize(n, 'l2') for n in null_space]
+            # Create null space basis object
+            self.null_space_basis = VectorSpaceBasis(null_space)
+
         # Setting up displacement-part linear solver 
         # LinearVariationalProblem(lhs(self.D2W_u),replace(self.Wext,{self.u:self.u_}), self.u, self.bcs)
         if (self.use_hybrid_solver):
             self.solver_u = HybridLinearSolver(lhs(self.D2W_u),dot(self.load,self.u_)*self.ds,\
                                                self.u,bcs=self.bcs,parameters={"iteration_switch": 5,\
-                                                                               "user_switch": True}) #not self.remesh or (self.niter>0)})
+                                               "user_switch": True},null_space_basis=self.null_space_basis) #not self.remesh or (self.niter>0)})
         else:
             if (not self.mat.tension_compression_asymmetry):
                 self.problem_u = LinearVariationalProblem(lhs(self.D2W_u),dot(self.load,self.u_)*self.ds,self.u,self.bcs)
@@ -284,9 +306,9 @@ class FractureProblem:
 
         
         self.solver_d = PETScTAOSolver()
-        self.solver_d.parameters["method"] = "tron" # "gpcg"
+        self.solver_d.parameters["method"] = "tron"
         self.solver_d.parameters["line_search"] = "gpcg"
-        self.solver_d.parameters["linear_solver"] = "mumps" #'cg", "gltr", "gmres", "nash"
+        self.solver_d.parameters["linear_solver"] = "cg" #"mumps" #"mumps" #'cg", "gltr", "gmres", "nash"
         #self.solver_d.parameters["preconditioner"] = "hypre_amg"
         self.solver_d.parameters["maximum_iterations"] = 5000
         # self.solver_d.parameters["gradient_absolute_tol"] = self.staggered_solver["tol"]
@@ -295,7 +317,8 @@ class FractureProblem:
         self.solver_d.parameters["gradient_absolute_tol"] = 1.e-4
         self.solver_d.parameters["gradient_relative_tol"] = 1.e-4
         self.solver_d.parameters["gradient_t_tol"] = 1.e-4
-            
+           
+    #@profile 
     def staggered_solve(self):
         DeltaE = 1.
         self.niter = 0
@@ -331,19 +354,21 @@ class FractureProblem:
             '''
 
             # u-update
-            self.u_prev.assign(self.u)
+            # self.u_prev.assign(self.u)
 
             tic_assemble = time()
             Etot_old = assemble(self.Wtot)
             self.runtime_assemble += time() - tic_assemble
             
             # d-solve : gives d_{n+1}^{pred} from u^{n+1}
-            self.dold.assign(self.d)         
+            #self.dold.assign(self.d)   
             dam_prob = DamageProblem(self.Wtot,self.DW_d,self.D2W_d,self.d)
             tic_d = time()
             self.niter_TAO += self.solver_d.solve(dam_prob, self.d.vector(), self.d_lb.vector(), self.d_ub.vector())[0]
             self.runtime_d += time() - tic_d
             
+            self.d_prev_iter.assign(self.d)
+
             # Energy computation
             tic_assemble = time()
             Etot = assemble(self.Wtot)
@@ -397,7 +422,7 @@ class FractureProblem:
     def export_damage(self,t):
         tic_export = time()
         self.results.write(self.d,t)
-        self.results.write(self.d_eq_fiss,t)
+        #self.results.write(self.d_eq_fiss,t)
         if ((not self.write_checkpoint_count % 10) and self.save_checkpoints):
             self.results.write_checkpoint(self.d,"Damage",t,append=True)
             self.write_checkpoint_count = 1
@@ -407,37 +432,39 @@ class FractureProblem:
     def export_J(self,t):
         tic_export = time()
         #os.system('rm %s' % self.prefix+"J_integral.xdmf")
-        J_results = XDMFFile(MPI.comm_world,self.prefix+"J_integral.xdmf")
-        J_results.parameters["flush_output"] = True
-        J_results.parameters["functions_share_mesh"] = True
         self.sig.assign(local_project(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos),self.Vsig))
-        J_results.write(self.u,t)
-        J_results.write(self.sig,t)
+        self.J_results.write(self.u,t)
+        self.J_results.write(self.sig,t)
         self.runtime_export += time() - tic_export
             
     def export_all(self,t):
         tic_export = time()
         self.results.write(self.u,t)
         self.sig.assign(local_project(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
-        self.epspos.assign(local_project(dot(self.mat.R.T,dot(voigt2stress(self.mat.eps_crystal_pos),self.mat.R.T)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
-        #self.epsneg.assign(local_project(dot(self.mat.R.T,dot(voigt2stress(self.mat.eps_crystal_neg),self.mat.R.T)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
         self.results.write(self.sig,t)
+        self.epspos.assign(local_project(dot(self.mat.R.T,dot(voigt2strain(self.mat.eps_crystal_pos),self.mat.R)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
+        #self.epsneg.assign(local_project(dot(self.mat.R.T,dot(voigt2strain(self.mat.eps_crystal_neg),self.mat.R)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
         self.results.write(self.epspos,t)
         #self.results.write(self.epsneg,t)
+        self.R.assign(project(self.mat.R,self.Vr)) #, solver_type='cg', preconditioner_type='hypre_amg'))
+        self.results.write(self.R,t)
         self.results.write(self.mat.phi1,t)
         self.results.write(self.mat.Phi,t)
         self.results.write(self.mat.phi2,t)
-        self.V1.assign(local_project(self.mat.R[0,:],self.VV))
-        self.V2.assign(local_project(self.mat.R[1,:],self.VV))
-        self.V3.assign(local_project(self.mat.R[2,:],self.VV))
-        self.results.write(self.V1,t)
-        self.results.write(self.V2,t)
-        self.results.write(self.V3,t)
-        self.results.write(self.P1pos,t)
-        self.results.write(self.P2pos,t)
-        self.results.write(self.P3pos,t)
-        self.Efrac_field.assign(local_project(sum(self.Efrac),self.V0))
-        self.results.write(self.Efrac_field,t)
+        #self.V1.assign(local_project(self.mat.R[0,:],self.VV))
+        #self.V2.assign(local_project(self.mat.R[1,:],self.VV))
+        #self.V3.assign(local_project(self.mat.R[2,:],self.VV))
+        #self.results.write(self.V1,t)
+        #self.results.write(self.V2,t)
+        #self.results.write(self.V3,t)
+        #self.results.write(self.P1pos,t)
+        #self.results.write(self.P2pos,t)
+        #self.results.write(self.P3pos,t)
+        #self.Efrac_field.assign(local_project(sum(self.Efrac),self.V0))
+        #self.results.write(self.Efrac_field,t)
+        #self.stiffness.assign(local_project(self.mat.C,self.Vstiffness))
+        #self.results.write(self.stiffness,t)
+
         if ((not self.write_checkpoint_count % 10) and self.save_checkpoints):
             self.checkpoints.write_checkpoint(self.u,self.u.name(),t,append=True)
         self.runtime_export += time() - tic_export
@@ -450,18 +477,18 @@ class FractureProblem:
             if (not self.dsJ==[]):
                 Jint_cols = "[15-%s]_J_integrals " % (15+len(self.dsJ)-1)
             f.write("#1_incr 2_time 3_F 4_Eel 5_Ed 6_Etot 7_niter 8_niter_tot 9_niter_TAO 10_niter_iterative 11_niter_direct 12_runtime 13_runtime_u 14_runtime_d "\
-                    + Jint_cols + "[%s-%s]_Efrac_i " % (15+len(self.dsJ),15+len(self.dsJ)+self.mat.damage_dim-1) + "runtime_remeshing\n")
+                    + Jint_cols + "[%s-%s]_Efrac_i " % (15+len(self.dsJ),15+len(self.dsJ)+self.mat.damage_dim-1) + "\n")
             f.close()
             if (not self.JIntegral==None):
                 for contour in self.JIntegral.keys():
-                    J_file = open(self.prefix+'J_integral_%s.res' % contour,'a')
+                    J_file = open(self.prefix+'J_integral_%s.txt' % contour,'a')
                     J_file.write("#1_incr 2_time J_left J_bot J_right J_top J_tot\n")
                     J_file.close()
             if (self.timings==True):
                 f = open(self.prefix+"timings.txt","a")
                 f.write("#1_incr 2_time 3_runtime_u 4_runtime_d 5_runtime_assemble "+\
-                        "6_runtime_export 7_runtime_JIntegral 8_runtime_remeshing 9_runtime_tot"+\
-                        "10_number_of_vertices\n")
+                        "6_runtime_export 7_runtime_JIntegral 8_runtime_remeshing_mmg 9_runtime_remeshing_interpolation 10_runtime_tot "+\
+                        "11_number_of_vertices\n")
                 f.close()
                 
         self.runtime   = 0. #time()
@@ -469,7 +496,8 @@ class FractureProblem:
         self.runtime_d = 0.
         self.runtime_assemble = 0.
         self.runtime_export = 0.
-        self.runtime_remeshing = 0.
+        self.runtime_remeshing_mmg = 0.
+        self.runtime_remeshing_interpolation = 0.
         self.runtime_JIntegral = 0.
         self.set_energies()
         self.set_problems()
@@ -482,7 +510,8 @@ class FractureProblem:
                 if ((self.t + self.dtime) > self.final_time):
                     self.dtime = self.final_time - self.t
                 self.load.t = self.t + self.dtime
-                self.Uimp.t = self.t + self.dtime
+                for uimp in self.Uimp:
+                    uimp.t = self.t + self.dtime
             if self.rank == 0:
                 print( "Increment %i | Loading : %.5e"%(self.incr,self.t+self.dtime))
             
@@ -519,23 +548,24 @@ class FractureProblem:
                 self.runtime_assemble += time() - tic_assemble       
                 
                 if ((not self.JIntegral==None) and self.rank==0):
-                    tic_JIntegral = time()
-                    for contour in self.JIntegral.keys():
-                        self.JIntegral[contour].compute_J_integral(contour,self.incr, self.t)
-                    self.runtime_JIntegral += time() - tic_JIntegral
+                        tic_JIntegral = time()
+                        for contour in self.JIntegral.keys():
+                            if ((not self.incr % self.JIntegral[contour].incr_save) or (self.incr < 1)):
+                                self.JIntegral[contour].compute_J_integral(contour,self.incr, self.t)
+                        self.runtime_JIntegral += time() - tic_JIntegral
                     
                 self.runtime += time() - tic
                 if (self.rank==0):
                     log = ([self.incr,self.t,F,Eel,Ed,Etot,self.niter,self.niter_tot, \
                            self.niter_TAO,self.niter_iterative,self.niter_direct,self.runtime,\
-                           self.runtime_u,self.runtime_d] + Jint + Efrac + [self.runtime_remeshing])
+                           self.runtime_u,self.runtime_d] + Jint + Efrac)
                     f = open(self.prefix+"results.txt","a")
                     f.write(' '.join(map(str, log))+"\n")
                     f.close()
                     
                     if (self.timings==True):
                         timings = ([self.incr,self.t,self.runtime_u,self.runtime_d,self.runtime_assemble,\
-                                    self.runtime_export,self.runtime_JIntegral,self.runtime_remeshing,self.runtime,\
+                                    self.runtime_export,self.runtime_JIntegral,self.runtime_remeshing_mmg,self.runtime_remeshing_interpolation,self.runtime,\
                                     self.num_vertices])
                         f = open(self.prefix+"timings.txt","a")
                         f.write(' '.join(map(str, timings))+"\n")
@@ -544,17 +574,19 @@ class FractureProblem:
                 self.incr += 1
             
         if (self.rank==0):
+             f = open(self.prefix+"results.txt","a")
              f.write("# elapsed time in solve()     = %.3f seconds\n" % self.runtime)
              f.write("# elapsed time in solve_u()   = %.3f seconds\n" % self.runtime_u)
              f.write("# elapsed time in solve_d()   = %.3f seconds\n" % self.runtime_d)
              f.write("# elapsed time in assemble()   = %.3f seconds\n" % self.runtime_assemble)
              f.write("# elapsed time in export()   = %.3f seconds\n" % self.runtime_export)
              f.write("# elapsed time in JIntegral() = %.3f seconds\n" % self.runtime_JIntegral)
-             f.write("# elapsed time in remeshing() = %.3f seconds\n" % self.runtime_remeshing)
+             f.write("# elapsed time in remeshing_mmg() = %.3f seconds\n" % self.runtime_remeshing_mmg)
+             f.write("# elapsed time in remeshing_interpolation() = %.3f seconds\n" % self.runtime_remeshing_interpolation)
              f.close()
              
     def remeshing(self):
-        tic_remeshing = time()
+        tic_remeshing_mmg = time()
         self.d_var = Function(self.Vd,name="Damage variation")
         self.d_var.vector()[:] = self.d.vector()[:] - self.d_ar.vector()[:]           
         max_d_var = max(self.d_var.vector()) #norm(self.d_var.vector(),'linf') #max(self.d_var.vector())
@@ -566,7 +598,7 @@ class FractureProblem:
             #self.d_var_smooth = filter_function(self.d,self.d_var,self.Vd,self.gaussian_filter_sigma,\
             #                                    self.mat.damage_dim,self.dim)
             #self.metric_field = np.array(self.d_var_smooth.compute_vertex_values())
-            self.remesher.metric(self.mat.damage_dim,self.d,self.Vd,self.remeshing_index)
+            self.metric = self.remesher.metric(self.metric,self.mat.damage_dim,self.d,self.Vd,self.remeshing_index)
             if (self.rank == 0):
                 metric = meshio.xdmf.read(self.remesher.mesh_path+"metric_%s.xdmf" % self.remeshing_index).point_data["v:metric"][:,0]
                 self.num_vertices = metric.size
@@ -590,6 +622,8 @@ class FractureProblem:
             if (self.rank == 0):
                 print("max cell size =", hmax)
                 print("min cell size =", hmin)
+            self.runtime_remeshing_mmg += time() - tic_remeshing_mmg
+            tic_remeshing_interpolation = time()
                 
             for (boundary,marker) in list(zip(self.boundaries,self.markers)):
                 boundary().mark(self.facets, marker)
@@ -609,12 +643,15 @@ class FractureProblem:
             # Re-Definition of functions spaces
             self.Vu = VectorFunctionSpace(self.mesh, "CG", self.u_degree, dim=self.dim)
             if self.mat.damage_dim == 1:
-                self.Vd = FunctionSpace(self.mesh, "CG",1)
+                self.Vd = FunctionSpace(self.mesh, "CG", self.d_degree)
             else:
-                self.Vd = VectorFunctionSpace(self.mesh, "CG",1, dim=self.mat.damage_dim)
+                self.Vd = VectorFunctionSpace(self.mesh, "CG", self.d_degree, dim=self.mat.damage_dim)
             self.V0 = FunctionSpace(self.mesh, "DG", 0)    
             self.Vsig = TensorFunctionSpace(self.mesh, "CG", 1, shape=(3,3))
             self.VV = VectorFunctionSpace(self.mesh, "DG", 0, dim=3)
+            self.Vr = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3))
+            #self.Vstiffness = TensorFunctionSpace(self.mesh, "CG", 1, shape=(6,6))
+            self.Vmetric = FunctionSpace(self.mesh, "CG", self.d_degree)    
                 
             self.u_ = TestFunction(self.Vu)
             self.du = TrialFunction(self.Vu)
@@ -625,22 +662,22 @@ class FractureProblem:
             tmp = self.u
             self.u = Function(self.Vu,name="Displacement") 
             LagrangeInterpolator.interpolate(self.u,tmp)
-            tmp = self.u_prev
-            self.u_prev = Function(self.Vu,name="Previous displacement") 
-            LagrangeInterpolator.interpolate(self.u_prev,tmp)
+            #tmp = self.u_prev
+            #self.u_prev = Function(self.Vu,name="Previous displacement") 
+            #LagrangeInterpolator.interpolate(self.u_prev,tmp)
 
-            file = XDMFFile(MPI.comm_world,self.remesher.mesh_path+"d_ub_before.xdmf")
-            file.write(self.d_ub)
-        
             tmp = self.d
             self.d = Function(self.Vd,name="Damage") 
             LagrangeInterpolator.interpolate(self.d,tmp)
             tmp = self.d_prev
             self.d_prev = Function(self.Vd,name="Previous Damage") 
             LagrangeInterpolator.interpolate(self.d_prev,tmp)
-            tmp = self.dold
-            self.dold = Function(self.Vd,name="Old Damage") 
-            LagrangeInterpolator.interpolate(self.dold,tmp)
+            tmp = self.d_prev_iter
+            self.d_prev_iter = Function(self.Vd,name="Previous damage in staggered minimization")
+            LagrangeInterpolator.interpolate(self.d_prev_iter,tmp)
+            #tmp = self.dold
+            #self.dold = Function(self.Vd,name="Old Damage") 
+            #LagrangeInterpolator.interpolate(self.dold,tmp)
             tmp = self.d_ub
             self.d_ub = Function(self.Vd,name="Damage upper bound") 
             #LagrangeInterpolator.interpolate(self.d_ub,tmp)
@@ -649,25 +686,28 @@ class FractureProblem:
             self.d_lb = Function(self.Vd,name="Lower bound d_n") 
             LagrangeInterpolator.interpolate(self.d_lb,tmp)
             self.d_ar= Function(self.Vd,name="Damage field after remeshing") 
-            LagrangeInterpolator.interpolate(self.d_ar,self.d)
+            self.d_ar.vector()[:] = self.d.vector()[:]
+            #LagrangeInterpolator.interpolate(self.d_ar,self.d)
+            tmp = self.metric
+            self.metric = Function(self.Vmetric,name="Remeshing metric") 
+            LagrangeInterpolator.interpolate(self.metric,tmp)
 
-            tmp = self.sig
+            #tmp = self.sig
             self.sig = Function(self.Vsig,name="Stress") 
-            LagrangeInterpolator.interpolate(self.sig,tmp)
-            tmp = self.V1
-            self.V1 = Function(self.VV,name="V1") 
-            LagrangeInterpolator.interpolate(self.V1,tmp)           
-            tmp = self.V2
-            self.V2 = Function(self.VV,name="V2") 
-            LagrangeInterpolator.interpolate(self.V2,tmp)  
-            tmp = self.V3
-            self.V3 = Function(self.VV,name="V3") 
-            LagrangeInterpolator.interpolate(self.V3,tmp)  
-    
-            file = XDMFFile(MPI.comm_world,self.remesher.mesh_path+"d_ub_after.xdmf")
-            #file.write(self.facets)
-            file.write(self.d_ub)
-            
+            #LagrangeInterpolator.interpolate(self.sig,tmp)
+            #tmp = self.V1
+            #self.V1 = Function(self.VV,name="V1") 
+            #LagrangeInterpolator.interpolate(self.V1,tmp)           
+            #tmp = self.V2
+            #self.V2 = Function(self.VV,name="V2") 
+            #LagrangeInterpolator.interpolate(self.V2,tmp)  
+            #tmp = self.V3
+            #self.V3 = Function(self.VV,name="V3") 
+            #LagrangeInterpolator.interpolate(self.V3,tmp)  
+            #tmp = self.R
+            self.R = Function(self.Vr,name="Rotation matrix")
+            #LagrangeInterpolator.interpolate(self.R,tmp)  
+
             self.myBCS.Vu = self.Vu
             self.myBCS.Vd = self.Vd
             self.myBCS.facets = self.facets
@@ -688,10 +728,10 @@ class FractureProblem:
             self.set_problems()
             
             self.remeshing_index += 1
+            self.runtime_remeshing_interpolation += time() - tic_remeshing_interpolation
         else:
             self.remesh = False
             self.set_problems() #self.solver_u.params["user_switch"] = (not self.remesh) #
-        self.runtime_remeshing += time() - tic_remeshing
     
     # def user_postprocess(self):
     #     if (self.niter % 10) ==0:

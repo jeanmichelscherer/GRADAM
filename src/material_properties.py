@@ -294,9 +294,10 @@ def make_fracture_properties_per_domain(dim,
         V0 = FunctionSpace(mesh, "DG", 1)
         Vd = FunctionSpace(mesh, "CG", 1)
     else:
-        V0 = VectorFunctionSpace(mesh, "DG", damage_dim)
+        #V0 = VectorFunctionSpace(mesh, "DG", damage_dim)
+        V0 = VectorFunctionSpace(mesh, "DG", 1, dim=damage_dim)
         #Vd = VectorFunctionSpace(mesh, "CG", damage_dim)
-        Vd = VectorFunctionSpace(mesh, "CG",1, dim=damage_dim)
+        Vd = VectorFunctionSpace(mesh, "CG", 1, dim=damage_dim)
     GC_, L0_, DUB_ = GC(mf), L0(mf), DUB(mf)
     Gc, l0, dub = Function(V0, name='Gc'), Function(V0, name='l0'), Function(Vd, name='Damage upper bound')
     Gc.interpolate(GC_)

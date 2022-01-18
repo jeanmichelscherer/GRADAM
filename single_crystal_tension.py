@@ -168,9 +168,9 @@ problem.final_time = 2.
 problem.use_hybrid_solver = True
 
 # setup boundary conditions
-problem.Uimp = Expression("t", t=0, degree=0)
+problem.Uimp = [Expression("t", t=0, degree=0)]
 problem.bcs  = [DirichletBC(problem.Vu.sub(0), Constant(0.), facets, 1),
-                DirichletBC(problem.Vu.sub(0), problem.Uimp, facets, 2)]
+                DirichletBC(problem.Vu.sub(0), problem.Uimp[0], facets, 2)]
 problem.bc_d = [DirichletBC(problem.Vd.sub(0), Constant(.01), facets, 5)]
 
 # compute resultant force

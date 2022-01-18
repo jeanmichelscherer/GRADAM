@@ -231,8 +231,8 @@ ampl = sqrt(Ep*Gc_)*(1.+nu_)/E_
 Xc = [c, W/2] #position of the crack
 t0 = 0.
     
-problem.Uimp = surfingU(t0, Xc, ampl, mu, kappa)
-problem.bcs  = [DirichletBC(problem.Vu, problem.Uimp, facets, 1)]
+problem.Uimp = [surfingU(t0, Xc, ampl, mu, kappa)]
+problem.bcs  = [DirichletBC(problem.Vu, problem.Uimp[0], facets, 1)]
 problem.bc_d = [DirichletBC(problem.Vd.sub(0), Constant(1.), facets, 9)]
 
 # compute resultant force

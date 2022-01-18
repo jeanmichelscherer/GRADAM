@@ -24,7 +24,7 @@ def trapz(a,b,c):
     return (sum(list))
 
 class JIntegral:
-    def __init__(self,path=None, input_file=None, x_bot=None, x_top=None, y_bot=None, y_top=None, resolution=None):
+    def __init__(self,path=None, input_file=None, x_bot=None, x_top=None, y_bot=None, y_top=None, resolution=None, incr_save=1):
         self.path = path
         self.input_file = input_file
         self.x_bot = x_bot
@@ -32,6 +32,7 @@ class JIntegral:
         self.y_bot = y_bot
         self.y_top = y_top
         self.resolution = resolution
+        self.incr_save = incr_save
 
     def compute_J_integral(self, contour, step, time):
         #run_paraview_PP_j_contours(step, self.path, self.input_file, self.x_bot, self.x_top, self.y_bot, self.y_top, self.resolution )
@@ -61,8 +62,8 @@ class JIntegral:
         s32    = []
         s13    = []
         
-        J_file = open(self.path+'J_integral_%s.res' % contour,'a')
-        #J_file.write("#time J_left J_bot J_right J_top J_tot\n")
+        J_file = open(self.path+'J_integral_%s.txt' % contour,'a')
+        #J_file.write("#incr time J_left J_bot J_right J_top J_tot\n")
         #for i in range(steps):
         J = []
         sides = ['left','bot','right','top']
@@ -135,7 +136,7 @@ class JIntegral:
             
             #print(step, ": ",  time, ": ", side, ": ", J_W, ", ", J_Tgradu)
     
-        J_file.write("%s " %time + " ".join(map(str,J)) + " %s" % sum(J) +"\n")
+        J_file.write("%s %s " % (step,time) + " ".join(map(str,J)) + " %s" % sum(J) +"\n")
 
         
         print("\t\t\tParaview computed J-integral on contour %s: %s " % (contour,sum(J)))

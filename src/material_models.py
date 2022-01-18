@@ -51,8 +51,9 @@ def strain2voigt(e):
     #return as_vector([e[0,0],e[1,1],e[2,2],2*e[0,1],2*e[1,2],2*e[2,0]])
     return as_vector([e[0,0],e[1,1],e[2,2],2*e[1,2],2*e[0,2],2*e[0,1]])
 def voigt2stress(s):
-    #return as_tensor([[s[0], s[3], s[5]],[s[3], s[1], s[4]],[s[5], s[4], s[2]]])
     return as_tensor([[s[0], s[5], s[4]],[s[5], s[1], s[3]],[s[4], s[3], s[2]]])
+def voigt2strain(e):
+    return as_tensor([[e[0], e[5]/2., e[4]/2.],[e[5]/2., e[1], e[3]/2.],[e[4]/2., e[3]/2., e[2]]])
 
 ppos = lambda x: (abs(x)+x)/2.
 pneg = lambda x: x-ppos(x)
@@ -87,14 +88,19 @@ class EXD:
         l0_ = self.mp["l0"]
         dub_= self.mp["dub"]
         self.Gc,self.l0,self.dub = make_fracture_properties_per_domain(self.dim,self.mesh,self.mf,self.damage_dim,Gc_,l0_,dub_)
-        self.B_crystal = self.mp["B_crystal"]
+        if ("B_crystal" in self.mp): 
+            self.B_crystal = self.mp["B_crystal"]
+        elif ("alpha" in self.mp and "M" in self.mp):
+            self.alpha = self.mp["alpha"]
+            self.M = self.mp["M"]
+            self.damage_induced_anisotropy = self.mp["damage_induced_anisotropy"]
         self.anisotropic_degradation = False
-        self.damage_tensor = damage_tensor # only impltemented in 2D for orthogonal cleavage planes
+        self.damage_tensor = damage_tensor # only implemented in 2D for orthogonal cleavage planes
         if ("D_crystal" in self.mp):
             self.D_crystal = self.mp["D_crystal"]
             self.anisotropic_degradation = True
         self.tension_compression_asymmetry = False
-        self.spheric_deviatoric_decomposition = False
+        self.spheric_deviatoric_decomposition = [False]
         self.cleavage_planes_decomposition = False
         self.spectral_decomposition = False
         self.C, self.R, self.phi1, self.Phi, self.phi2 = self.setup_behaviour()
@@ -279,27 +285,61 @@ class EXD:
         #     print(self.n[i],self.epsilon[i])
         #     self.eps_crystal_pos += ppos(self.epsilon[i])*outer(self.n[i],self.n[i])
         #     self.eps_crystal_neg += pneg(self.epsilon[i])*outer(self.n[i],self.n[i])
-                
-    def fracture_energy_density(self,d):
-        if self.damage_model == "AT1":
-            cw = Constant(8/3.)
-            w = lambda d: d
-        elif damage_model == "AT2":
-            cw = Constant(2.)
-            w = lambda d: d**2
+
+    def make_B_sample(self,d,d_prev_iter):
+        if ("alpha" in self.mp and "M" in self.mp):
+            I = as_tensor( np.eye(3) )
+            if (self.damage_dim==1):
+                if (self.damage_induced_anisotropy==True):
+                    k_dam = d_prev_iter
+                else:
+                    k_dam = 1.0
+                self.B_crystal = as_tensor(I) + k_dam*self.alpha*(as_tensor(I) - outer(self.M,self.M))
+            else:
+                self.B_crystal = []
+                for n in range(self.damage_dim):
+                    if (self.damage_induced_anisotropy==True):
+                        k_dam = d_prev_iter.sub(n)**2
+                    else:
+                        k_dam = 1.0
+                    self.B_crystal.append( as_tensor(I) + k_dam*self.alpha*(as_tensor(I) - outer(self.M[n],self.M[n])) )
+
         if (self.damage_dim==1):
             self.B_sample = dot(self.R.T,dot(self.B_crystal,self.R))
             if (self.dim==2):
                 self.B_sample = as_tensor([[self.B_sample[0,0], self.B_sample[0,1]],
                                            [self.B_sample[1,0], self.B_sample[1,1]]])
-            return [self.Gc/cw*(w(d)/self.l0+self.l0*dot(dot(self.B_sample, grad(d)),grad(d)))]
         else:
-            Efrac = []
             self.B_sample = []
             for n in range(self.damage_dim):
                 self.B_sample.append(dot(self.R.T,dot(self.B_crystal[n],self.R)))
                 if (self.dim==2):
                     self.B_sample[n] = as_tensor([[self.B_sample[n][0,0], self.B_sample[n][0,1]],
                                                   [self.B_sample[n][1,0], self.B_sample[n][1,1]]])
+                
+    def fracture_energy_density(self,d,d_prev_iter):
+        if self.damage_model == "AT1":
+            cw = Constant(8/3.)
+            w = lambda d: d
+        elif damage_model == "AT2":
+            cw = Constant(2.)
+            w = lambda d: d**2
+        self.make_B_sample(d,d_prev_iter)
+        if (self.damage_dim==1):
+#            self.B_sample = dot(self.R.T,dot(self.B_crystal,self.R))
+#            if (self.dim==2):
+#                self.B_sample = as_tensor([[self.B_sample[0,0], self.B_sample[0,1]],
+#                                           [self.B_sample[1,0], self.B_sample[1,1]]])
+            return [self.Gc/cw*(w(d)/self.l0+self.l0*dot(dot(self.B_sample, grad(d)),grad(d)))]
+        else:
+            Efrac = []
+#            self.B_sample = []
+            for n in range(self.damage_dim):
+#                self.B_sample.append(dot(self.R.T,dot(self.B_crystal[n],self.R)))
+#                if (self.B_crystal == as_tensor(np.eye(3))):
+#                    self.B_sample = as_tensor(np.eye(3))
+#                if (self.dim==2):
+#                    self.B_sample[n] = as_tensor([[self.B_sample[n][0,0], self.B_sample[n][0,1]],
+#                                                  [self.B_sample[n][1,0], self.B_sample[n][1,1]]])
                 Efrac.append( self.Gc[n]/cw*(w(d[n])/self.l0[n]+self.l0[n]*dot(dot(self.B_sample[n], grad(d[n])),grad(d[n]))) )
             return Efrac

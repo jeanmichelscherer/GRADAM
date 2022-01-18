@@ -6,14 +6,14 @@ Created on Fri Feb 19 13:58:43 2021
 @author: bleyerj
 """
 from dolfin import assemble_system, PETScMatrix, PETScVector, as_backend_type, \
-                    PETScOptions
+                    PETScOptions, MPI
 from petsc4py import PETSc
 from time import time
 
 class HybridLinearSolver:
     def __init__(self, a, L, u, p=None, bcs=None, parameters={"iteration_switch": 5, "user_switch": True},
                  direct_solver={"solver": "mumps", "type": "cholesky", "blr": True},
-                 iterative_solver={"solver": "cg"}, log=True, timings=False):
+                 iterative_solver={"solver": "cg"}, log=True, timings=False, null_space_basis=None):
         self.a = a
         self.L = L
         self.u = u
@@ -23,6 +23,8 @@ class HybridLinearSolver:
         self.direct_solver = direct_solver
         self.iterative_solver = iterative_solver
         self.reuse_preconditioner = False
+
+        self.null_space_basis = null_space_basis
 
         self.log = log
         self.timings = timings
@@ -50,7 +52,7 @@ class HybridLinearSolver:
         self.pc.setReusePreconditioner(True)
 
     def print_log(self, m):
-        if self.log:
+        if self.log and (MPI.rank(MPI.comm_world)==0):
             print(m)
     def print_timings(self, m):
         if self.timings:
@@ -60,6 +62,10 @@ class HybridLinearSolver:
         self.tic = time()
         assemble_system(self.a, self.L, self.bcs, A_tensor=self.A, b_tensor=self.b)
         self.print_timings("Operator assembly:")
+
+        if (not self.null_space_basis==None):
+            as_backend_type(self.A).set_nullspace(self.null_space_basis)
+            self.null_space_basis.orthogonalize(self.b)
 
         if not self.reuse_preconditioner: # preconditioner is updated
             if self.p is not None:        # with a user-specified preconditioner p
