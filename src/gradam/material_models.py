@@ -288,7 +288,7 @@ class EXD:
 
     def make_B_sample(self,d,d_prev_iter):
         if ("alpha" in self.mp and "M" in self.mp):
-            I = as_tensor( np.eye(3) )
+            I = np.eye(3)
             if (self.damage_dim==1):
                 if (self.damage_induced_anisotropy==True):
                     k_dam = d_prev_iter
@@ -303,6 +303,8 @@ class EXD:
                     else:
                         k_dam = 1.0
                     self.B_crystal.append( as_tensor(I) + k_dam*self.alpha*(as_tensor(I) - outer(self.M[n],self.M[n])) )
+        else:
+            self.B_crystal = as_tensor( np.eye(3) )
 
         if (self.damage_dim==1):
             self.B_sample = dot(self.R.T,dot(self.B_crystal,self.R))
