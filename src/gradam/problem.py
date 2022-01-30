@@ -69,7 +69,7 @@ class DamageProblem(OptimisationProblem):
         assemble(self.Jac, A, self.bcs)
         
 class FractureProblem:
-    def __init__(self,mesh,facets,mat,prefix,load = Constant((0.,0.)),Jcontours=[],mf=None,mvc=None):
+    def __init__(self,mesh,facets,mat,prefix,loads=[[0,Constant(0.)]],Jcontours=[],mf=None,mvc=None):
         self.staggered_solver = dict({"iter_max":500,"tol":1e-4,"accelerated":False,"history_function":False})
         self.comm = MPI.comm_world
         self.rank = MPI.rank(self.comm)  
@@ -85,7 +85,6 @@ class FractureProblem:
         self.prefix = prefix
         if (not os.path.isdir(self.prefix)):
             os.system("mkdir %s" % self.prefix)
-        self.load = load
         self.bcs = []
         self.bc_d =[]
         self.Uimp = [Expression("t", t=0, degree=0)]
@@ -105,6 +104,8 @@ class FractureProblem:
         self.set_functions()
         self.dx = Measure("dx")
         self.ds = Measure("ds")
+        self.loads = loads
+        self.load_boundaries = [self.ds]
         self.Wext = self.define_external_work()
         self.resultant = self.sig[1,1]*self.ds      
         self.results = XDMFFile(MPI.comm_world,self.prefix+"output.xdmf")
@@ -215,9 +216,16 @@ class FractureProblem:
         #self.stiffness = Function(self.Vstiffness,name="Stiffness")
         self.metric = Function(self.Vmetric,name="Remeshing metric")
         self.metric.interpolate(Constant(0.))
-            
+           
+    def set_load(self,u):
+        L = self.loads[0][1]*u[self.loads[0][0]]*self.load_boundaries[0]
+        for (load,load_boundary) in list(zip(self.loads[1:],self.load_boundaries[1:])):
+            L += load[1]*u[load[0]]*load_boundary
+        return L
+ 
     def define_external_work(self):
-        return dot(self.load,self.u)*self.ds
+        return self.set_load(self.u)
+        #return dot(self.load,self.u)*self.ds
         
     def set_energies(self):
         # Definition of energy densities            
@@ -268,13 +276,16 @@ class FractureProblem:
 
         # Setting up displacement-part linear solver 
         # LinearVariationalProblem(lhs(self.D2W_u),replace(self.Wext,{self.u:self.u_}), self.u, self.bcs)
+        load = self.set_load(self.u_)
         if (self.use_hybrid_solver):
-            self.solver_u = HybridLinearSolver(lhs(self.D2W_u),dot(self.load,self.u_)*self.ds,\
+            #self.solver_u = HybridLinearSolver(lhs(self.D2W_u),dot(self.load,self.u_)*self.ds,\
+            self.solver_u = HybridLinearSolver(lhs(self.D2W_u),load,\
                                                self.u,bcs=self.bcs,parameters={"iteration_switch": 5,\
                                                "user_switch": True},null_space_basis=self.null_space_basis) #not self.remesh or (self.niter>0)})
         else:
             if (not self.mat.tension_compression_asymmetry):
-                self.problem_u = LinearVariationalProblem(lhs(self.D2W_u),dot(self.load,self.u_)*self.ds,self.u,self.bcs)
+                #self.problem_u = LinearVariationalProblem(lhs(self.D2W_u),dot(self.load,self.u_)*self.ds,self.u,self.bcs)
+                self.problem_u = LinearVariationalProblem(lhs(self.D2W_u),load,self.u,self.bcs)
                 self.solver_u = LinearVariationalSolver(self.problem_u)
                 self.solver_u.parameters["linear_solver"] = "mumps"
             else:
@@ -332,6 +343,7 @@ class FractureProblem:
         while (DeltaE>self.staggered_solver["tol"]) and (self.niter<self.staggered_solver["iter_max"]): 
             if self.rank == 0:
                 print("    Iteration %i "%(self.niter))
+
             # u-solve : gives u_{n+1}^{pred} from d_{n}
             tic_u = time()
             count = self.solver_u.solve()
@@ -355,11 +367,11 @@ class FractureProblem:
 
             # u-update
             # self.u_prev.assign(self.u)
-
+            
             tic_assemble = time()
             Etot_old = assemble(self.Wtot)
             self.runtime_assemble += time() - tic_assemble
-            
+
             # d-solve : gives d_{n+1}^{pred} from u^{n+1}
             #self.dold.assign(self.d)   
             dam_prob = DamageProblem(self.Wtot,self.DW_d,self.D2W_d,self.d)
@@ -374,7 +386,10 @@ class FractureProblem:
             Etot = assemble(self.Wtot)
             self.runtime_assemble += time() - tic_assemble
 
-            DeltaE = abs(Etot_old/Etot-1)
+            if (not Etot==0.):
+                DeltaE = abs(Etot_old/Etot-1)
+            else:
+                DeltaE = abs(Etot_old - Etot)
             
             self.niter += 1
             self.niter_tot += 1
@@ -509,14 +524,15 @@ class FractureProblem:
                 self.dtime = min(self.dtime,self.max_dtime)
                 if ((self.t + self.dtime) > self.final_time):
                     self.dtime = self.final_time - self.t
-                self.load.t = self.t + self.dtime
+                for load in self.loads:
+                    load[1].t = self.t + self.dtime
                 for uimp in self.Uimp:
                     uimp.t = self.t + self.dtime
             if self.rank == 0:
                 print( "Increment %i | Loading : %.5e"%(self.incr,self.t+self.dtime))
-            
+
             self.staggered_solve()
-            
+
             if (self.use_remeshing):
                 self.remeshing()
             if self.remesh == False:
@@ -662,6 +678,7 @@ class FractureProblem:
             tmp = self.u
             self.u = Function(self.Vu,name="Displacement") 
             LagrangeInterpolator.interpolate(self.u,tmp)
+
             #tmp = self.u_prev
             #self.u_prev = Function(self.Vu,name="Previous displacement") 
             #LagrangeInterpolator.interpolate(self.u_prev,tmp)
