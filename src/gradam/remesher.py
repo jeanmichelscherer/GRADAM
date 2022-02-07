@@ -79,7 +79,7 @@ class Remesher:
         pyMPI.COMM_WORLD.barrier()
         mini, maxi = pyMPI.COMM_WORLD.allreduce(mini, op=pyMPI.MIN), pyMPI.COMM_WORLD.allreduce(maxi, op=pyMPI.MAX)
         metric_field.vector()[:] = (metric_field.vector()[:] - mini)/(max(maxi - mini,1.e-6))
-        metric_field.vector()[:] = np.maximum(metric_field.vector()[:], previous_metric.vector()[:])
+        metric_field.vector()[:] = np.maximum(metric_field.vector()[:], previous_metric.vector()[:]) #/!\ prevents mesh to coarsen
         xdmf = XDMFFile(pyMPI.COMM_WORLD, self.mesh_path+"metric_%s.xdmf" % remeshing_index)
         xdmf.write(metric_field)
         xdmf.close()
