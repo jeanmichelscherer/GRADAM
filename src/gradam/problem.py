@@ -485,6 +485,7 @@ class FractureProblem:
         self.runtime_export += time() - tic_export
                    
     def solve(self):
+        self.startup_message()
         #log = [[0]*13]
         if (self.rank==0):
             f = open(self.prefix+"results.txt","a")
@@ -750,6 +751,11 @@ class FractureProblem:
             self.remesh = False
             self.set_problems() #self.solver_u.params["user_switch"] = (not self.remesh) #
     
+    def startup_message(self):
+        print(' ##########      gradam-1.0.0       ##########\n',\
+               '########## Jean-Michel Scherer (C) ##########\n',\
+               '##########   scherer@caltech.edu   ##########\n')
+        
     # def user_postprocess(self):
     #     if (self.niter % 10) ==0:
     #         intermediate_loading = self.load_steps[self.incr-1]+self.niter/float(self.staggered_solver["iter_max"])*(self.load_steps[self.incr]-self.load_steps[self.incr-1])
