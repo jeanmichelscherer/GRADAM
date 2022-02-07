@@ -88,9 +88,10 @@ class EXD:
         l0_ = self.mp["l0"]
         dub_= self.mp["dub"]
         self.Gc,self.l0,self.dub = make_fracture_properties_per_domain(self.dim,self.mesh,self.mf,self.damage_dim,Gc_,l0_,dub_)
-        if ("B_crystal" in self.mp): 
-            self.B_crystal = self.mp["B_crystal"]
-        elif ("alpha" in self.mp and "M" in self.mp):
+        #if ("B_crystal" in self.mp): 
+        #    self.B_crystal = self.mp["B_crystal"]
+        #el
+        if ("alpha" in self.mp and "M" in self.mp):
             self.alpha = self.mp["alpha"]
             self.M = self.mp["M"]
             self.damage_induced_anisotropy = self.mp["damage_induced_anisotropy"]
