@@ -753,9 +753,10 @@ class FractureProblem:
             self.set_problems() #self.solver_u.params["user_switch"] = (not self.remesh) #
     
     def startup_message(self):
-        print(' ##########      gradam-1.0.0       ##########\n',\
-               '########## Jean-Michel Scherer (C) ##########\n',\
-               '##########   scherer@caltech.edu   ##########\n')
+        if (self.rank==0):
+            print(' ##########      gradam-1.0.0       ##########\n',\
+                  '########## Jean-Michel Scherer (C) ##########\n',\
+                  '##########   scherer@caltech.edu   ##########\n')
         
     # def user_postprocess(self):
     #     if (self.niter % 10) ==0:
