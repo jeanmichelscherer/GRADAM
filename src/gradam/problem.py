@@ -655,8 +655,9 @@ class FractureProblem:
                     self.dsJ[i] = dsj(Jmarker)           
             self.ds = Measure("ds", subdomain_data=self.facets)
             self.mat = EXD(self.mat.dim,self.mat.damage_dim,self.mat.mp,\
-                           self.mesh,self.mf,self.mat.geometry,damage_model=self.mat.damage_model)
-                
+                           self.mesh,self.mf,self.mat.geometry,damage_model=self.mat.damage_model,\
+                           anisotropic_elasticity=self.mat.anisotropic_elasticity,damage_tensor=self.mat.damage_tensor)
+            
             # Re-Definition of functions spaces
             self.Vu = VectorFunctionSpace(self.mesh, "CG", self.u_degree, dim=self.dim)
             if self.mat.damage_dim == 1:

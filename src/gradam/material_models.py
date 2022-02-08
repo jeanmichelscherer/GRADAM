@@ -95,8 +95,10 @@ class EXD:
             self.alpha = self.mp["alpha"]
             self.M = self.mp["M"]
             self.damage_induced_anisotropy = self.mp["damage_induced_anisotropy"]
-        self.anisotropic_degradation = False
         self.damage_tensor = damage_tensor # only implemented in 2D for orthogonal cleavage planes
+        self.anisotropic_degradation = False
+        if self.damage_tensor[0]:
+            self.anisotropic_degradation = True
         if ("D_crystal" in self.mp):
             self.D_crystal = self.mp["D_crystal"]
             self.anisotropic_degradation = True
@@ -111,7 +113,7 @@ class EXD:
             C, y1111, y1122, y1212 = make_cubic_elasticity_stiffness_tensor(self.dim,self.moduli,self.mesh,self.mf)
         elif (self.anisotropic_elasticity=="orthotropic"):
             C = make_orthotropic_elasticity_stiffness_tensor(self.dim,self.moduli,self.mesh,self.mf)
-        if (self.anisotropic_degradation == True):
+        if (self.anisotropic_degradation and ("D_crystal" in self.mp)):
             self.Cdam = []
             for n in range(self.damage_dim):
                 D_array = np.array( self.D_crystal[n] ) 
@@ -136,7 +138,7 @@ class EXD:
             #self.eps_crystal_neg = strain2voigt(dot(self.R,dot(as_tensor(np.zeros((3,3))),self.R.T)))
             self.eps_crystal_neg = 0.*self.eps_crystal_pos
 
-        if (self.dim==2 and self.damage_dim==2 and self.anisotropic_degradation==True and self.damage_tensor[0]==True):
+        if (self.dim==2 and self.damage_dim==2 and self.anisotropic_degradation and self.damage_tensor[0]):
             q = self.damage_tensor[1]
             p = self.damage_tensor[2]
             degrad_type = self.damage_tensor[3]
@@ -144,9 +146,18 @@ class EXD:
             if (degrad_type == 'Lorentz'):            
                 gamma = self.damage_tensor[4]
                 r = self.damage_tensor[5]
-                d1 = ((1-d[0])/(1+gamma*d[0]))**q*((1-d[1])/(1+gamma*d[1]))**r + kres
-                d2 = ((1-d[1])/(1+gamma*d[1]))**q*((1-d[0])/(1+gamma*d[0]))**r + kres
-                dd = ((1-d[0])/(1+gamma*d[0]))**p*((1-d[1])/(1+gamma*d[1]))**p + kres
+                #d1 = ((1-d[0])/(1+gamma*d[0]))**q*((1-d[1])/(1+gamma*d[1]))**r + kres
+                #d2 = ((1-d[1])/(1+gamma*d[1]))**q*((1-d[0])/(1+gamma*d[0]))**r + kres
+                #dd = ((1-d[0])/(1+gamma*d[0]))**p*((1-d[1])/(1+gamma*d[1]))**p + kres
+                #d1 = ((1-d[0])/(1+gamma*d[0]))**q + kres
+                #d2 = ((1-d[1])/(1+gamma*d[1]))**q + kres
+                #dd = ((1-d[0])/(1+gamma*d[0]))**p*((1-d[1])/(1+gamma*d[1]))**p + kres
+                d1 = ((1-d[0])/(1+gamma*d[0])) + kres
+                d2 = ((1-d[1])/(1+gamma*d[1])) + kres
+                dd = ((1-d[0])/(1+gamma*d[0]))*((1-d[1])/(1+gamma*d[1])) + kres
+                #d1 = ((1-d[0])) + kres
+                #d2 = ((1-d[1])) + kres
+                #dd = ((1-d[0]))*((1-d[1])) + kres
             elif (degrad_type=='tan'):
                 gamma = self.damage_tensor[4]
                 d1 = ((0.5/tan(gamma/2.))*tan(-gamma*(d[0]-0.5)) + 0.5)**q
@@ -160,6 +171,7 @@ class EXD:
             iD0 = as_tensor([[d1,0,0,0,0,0],[0,d2,0,0,0,0],[0,0,0,0,0,0],\
                              [0,0,0,dd,0,0],[0,0,0,0,dd,0],[0,0,0,0,0,dd]])
             degraded_stiffness = dot(iD0,dot(self.C,iD0))
+
             return dot(self.R.T,dot(voigt2stress(dot(degraded_stiffness,self.eps_crystal_pos)),self.R)) +\
                    self.sigma0(self.eps_crystal_neg)
 
@@ -167,7 +179,7 @@ class EXD:
             return ((1.-d)**2 + kres)*self.sigma0(self.eps_crystal_pos) + self.sigma0(self.eps_crystal_neg)
             #return self.sigma0(self.eps_crystal_neg)
         else:
-            if (self.anisotropic_degradation==True):
+            if (self.anisotropic_degradation):
                 g = []
                 for n in range(self.damage_dim):
                     g.append( (1.-d[n])**2 )
