@@ -1,0 +1,86 @@
+@DSL       Implicit;
+@Behaviour OrthotropicLinearHardeningPlasticity;
+@Author    T. Helfer, Jean-Michel Scherer;
+@Date 08/03/2022;
+@Description{
+  A simple orthotropic behaviour
+}
+
+@OrthotropicBehaviour<Pipe>;
+@Epsilon 1e-12;
+@Theta 1;
+
+@ModellingHypotheses {".+"};
+@Brick StandardElasticity;
+
+@HillTensor Hill {.5,.5,.5,1.5,1.5,1.5};
+
+@StateVariable real p;
+p.setGlossaryName("EquivalentPlasticStrain");
+
+@ExternalStateVariable real d;
+d.setGlossaryName("Damage");
+
+@MaterialProperty stress H;
+H.setEntryName("HardeningSlope");
+@MaterialProperty stress s0;
+s0.setGlossaryName("YieldStress");
+
+@Parameter real kres = 1e-5;
+kres.setEntryName("ResidualStiffness");
+
+@ComputeStiffnessTensor<UnAltered> {
+  //YoungModulus1, YoungModulus2, YoungModulus3,
+  1.,1.,1., 
+  //PoissonRatio12, PoissonRatio23, PoissonRatio13,
+  0.3,0.3,0.3,
+  //ShearModulus12, ShearModulus23, ShearModulus13
+  //10.,10.,10.
+  0.384615384615385,0.384615384615385,0.384615384615385
+};
+
+@LocalVariable bool b; // if true, plastic loading
+
+@InitLocalVariables{
+  sig = D*(eel+deto);
+  const auto seq = sqrt(sig|Hill*sig);
+  b = seq-(s0+H*p) > stress{0};
+}
+
+@Integrator{
+  sig = D*(eel+theta*deel);
+  const auto sref = D(0,0);
+  if(b){
+    const auto seq = sqrt(sig|Hill*sig);
+    const auto iseq = 1/(max(seq,real(1.e-10*sref)));
+    const auto n = iseq*Hill*sig;
+    // elasticity
+    feel        += dp*n;
+    dfeel_ddeel += theta*dp*iseq*(Hill-(n^n))*D;
+    dfeel_ddp    = n;
+    // plasticity
+    fp           = (seq-(s0+H*(p+theta*dp)))/sref;
+    dfp_ddp      = -theta*(H/sref);
+    dfp_ddeel    =  theta*(n|D)/sref;
+  }
+}
+
+@UpdateAuxiliaryStateVariables{
+  sig = ((1-d)*(1-d) + kres)*sig;
+}
+
+@TangentOperator{
+  const auto gd = (1-d)*(1-d) + kres;
+  Stensor4 iJe;
+  getPartialJacobianInvert(iJe);
+  Dt = gd * D * iJe;
+}
+
+@DissipatedEnergy{
+  Psi_d = Psi_d + (s0+H*p)*dp;
+}
+
+@InternalEnergy {
+  const auto gd = (1 - d)*(1 - d) + kres;
+  Psi_s = (0.5/gd)*(sig|eel);
+}
