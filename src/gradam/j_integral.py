@@ -39,7 +39,7 @@ class JIntegral:
         #run_paraview_PP_j_contours(step, self.path, self.input_file, self.x_bot, self.x_top, self.y_bot, self.y_top, self.resolution )
         gradam_location = gradam.__file__[:-11]
         cmd = "pvbatch %sj_contours_paraview.py %s %s %s %s %s %s %s %s %s" %\
-                    (gradam_location, step, self.path, self.input_file, contour, self.x_bot, self.x_top, self.y_bot, self.y_top, self.resolution)
+              (gradam_location, step, self.path, self.input_file, contour, self.x_bot, self.x_top, self.y_bot, self.y_top, self.resolution)
         #print("Running: ", cmd)
         os.system(cmd)
         
