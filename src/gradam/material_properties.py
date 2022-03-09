@@ -31,6 +31,28 @@ import numpy as np
 #from .ELtensor import *
 #import matscipy
 
+def make_property_per_domain(dim,
+                             mesh,
+                             mf,
+                             mat_prop_key,
+                             mat_prop):
+          
+    # interpolate material property
+    class MP(UserExpression):
+        def __init__(self, mf, **kwargs):
+            super().__init__(**kwargs)
+            self.mf = mf
+        def eval_cell(self, values, x, cell):
+            k = self.mf[cell.index]-1
+            values[0] = mat_prop[k]
+        def value_shape(self):
+            return ()
+    V0 = FunctionSpace(mesh, "DG", 0)
+    MP_ = MP(mf)
+    mp = Function(V0, name=mat_prop_key)
+    mp.interpolate(MP_)
+    return mp
+
 def make_cubic_elasticity_stiffness_tensor(dim,
                                            moduli, #=[[E1,nu1,G1], [E2,nu2,G2], ..., [En,nun,Gn]]
                                            mesh,
@@ -80,7 +102,7 @@ def make_cubic_elasticity_stiffness_tensor(dim,
                     [0.,    0.,    0.,    y1212, 0.,    0.,  ],
                     [0.,    0.,    0.,    0.,    y1212, 0.,  ],
                     [0.,    0.,    0.,    0.,    0.,    y1212]])
-    return C, y1111, y1122, y1212   
+    return C, y1111, y1122, y1212, E, nu, G
 
 def make_orthotropic_elasticity_stiffness_tensor(dim,
                                                  moduli, #=[[E1,E2,E3,nu12,nu21,nu13,nu31,nu23,nu32,G12,G13,G23], ...]
@@ -237,7 +259,7 @@ def make_orthotropic_elasticity_stiffness_tensor(dim,
                     [0.,    0.,    0.,    y2323, 0.,    0.,  ],
                     [0.,    0.,    0.,    0.,    y1313, 0.,  ],
                     [0.,    0.,    0.,    0.,    0.,    y1212]])
-    return C 
+    return C, E1, E2, E3, nu12, nu21, nu13, nu31, nu23, nu32, G12, G13, G23 
 
 def make_fracture_properties_per_domain(dim,
                                         mesh,
