@@ -60,8 +60,8 @@ class NeperGeometry:
             cells    = " -n %s -morpho 'voronoi'" % self.nbgrains
         elif (("square" in self.morpho) or ("octa" in self.morpho) or ("aspratio" in self.morpho)):
             cells    = " -n %s -morpho %s" %  (self.nbgrains,self.morpho)
-        if (("diameq" in self.morpho)):
-            cells    = " -n 'from_morpho' -morpho %s" %  (self.morpho)       
+            if (("diameq" in self.morpho)):
+                cells    = " -n 'from_morpho' -morpho %s" %  (self.morpho)       
         else:
             cells    = " -n 'from_morpho' -morpho 'graingrowth(%s)' " % self.diameq
         out_name = " -o %s " % self.neper_mesh
