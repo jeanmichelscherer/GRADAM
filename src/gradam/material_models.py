@@ -31,9 +31,11 @@ from dolfin import *
 from .material_properties import *
 from .rotation_matrix import *
 from .tensors import *
+from .mfront_behaviour import *
 import numpy as np
 from ufl import sign
 import ufl
+import mgis.fenics as mf
 
 parameters["form_compiler"]["representation"] = 'uflacs'
 ufl.algorithms.apply_derivatives.CONDITIONAL_WORKAROUND = True # allows to use a TrialFunction in conditional( ) for spectral_decomposition
@@ -62,8 +64,8 @@ Heav = lambda x: (sign(x)+1.)/2.
 
 class EXD:
     """ Elastic Crystal Damage (EXD) model with X variables and associated fracture energies """ 
-    def __init__(self,dim,damage_dim,material_parameters,mesh,mf,geometry,\
-                 damage_model="AT1",anisotropic_elasticity="cubic",damage_tensor=[False,0,0]):
+    def __init__(self,dim,damage_dim,material_parameters,mesh,mf,geometry,behaviour="linear_elasticity",\
+                 mfront_behaviour=None,damage_model="AT1",anisotropic_elasticity="cubic",damage_tensor=[False,0,0]):
         self.mp = material_parameters
         self.dim = dim
         self.damage_dim = damage_dim
@@ -73,17 +75,16 @@ class EXD:
         self.mf = mf
         self.geometry = geometry
         if (self.anisotropic_elasticity=="cubic"):
-            self.E=self.mp["E"]
-            self.nu=self.mp["nu"]
-            self.G=self.mp["G"]
-            self.moduli=list(zip(self.E,self.nu,self.G)) 
+            E=self.mp["E"]
+            nu=self.mp["nu"]
+            G=self.mp["G"]
+            self.moduli=list(zip(E,nu,G)) 
         elif (self.anisotropic_elasticity=="orthotropic"):
-            self.E1,self.E2,self.E3=self.mp["E1"],self.mp["E2"],self.mp["E3"]
-            self.nu12,self.nu21,self.nu13,self.nu31,self.nu23,self.nu32=self.mp["nu12"],\
+            E1,E2,E3=self.mp["E1"],self.mp["E2"],self.mp["E3"]
+            nu12,nu21,nu13,nu31,nu23,nu32=self.mp["nu12"],\
                 self.mp["nu21"],self.mp["nu13"],self.mp["nu31"],self.mp["nu23"],self.mp["nu32"]
-            self.G12,self.G13,self.G23=self.mp["G12"],self.mp["G13"],self.mp["G23"]
-            self.moduli=list(zip(self.E1,self.E2,self.E3,self.nu12,self.nu21,\
-                                 self.nu13,self.nu31,self.nu23,self.nu32,self.G12,self.G13,self.G23)) 
+            G12,G13,G23=self.mp["G12"],self.mp["G13"],self.mp["G23"]
+            self.moduli=list(zip(E1,E2,E3,nu12,nu21,nu13,nu31,nu23,nu32,G12,G13,G23)) 
         Gc_ = self.mp["Gc"]
         l0_ = self.mp["l0"]
         dub_= self.mp["dub"]
@@ -107,12 +108,30 @@ class EXD:
         self.cleavage_planes_decomposition = False
         self.spectral_decomposition = False
         self.C, self.R, self.phi1, self.Phi, self.phi2 = self.setup_behaviour()
+        self.behaviour = behaviour
+        self.mfront_behaviour = mfront_behaviour
+        if (not self.behaviour=='linear_elasticity'):
+            mat_prop = {}
+            #if (self.anisotropic_elasticity=="cubic"):
+                #mat_prop = {"YoungModulus": self.E, "PoissonRatio": self.nu} #,\
+                #            #, "ShearModulus": self.G,\
+            ##                 "YieldStrength": 1000., "HardeningSlope": 0.}
+            ## elif (self.anisotropic_elasticity=="orthotropic"):
+            ##     mat_prop = {#"YoungModulus1": self.E1, "YoungModulus2": self.E2, "YoungModulus3": self.E3,\
+            ##                 #"PoissonRatio12": self.nu12, "PoissonRatio13": self.nu13, "PoissonRatio23": self.nu23,\
+            ##                 #"ShearModulus12": self.G12, "ShearModulus13": self.G13, "ShearModulus23": self.G23,\
+            ##                 "YieldStrength": 1000., "HardeningSlope": 0.}
+            self.mfront_behaviour.set_material_properties(self.dim,self.mesh,self.mf,mat_prop)
+            self.mfront_behaviour.set_rotation_matrix(self.R.T)
+            
 
     def setup_behaviour(self):
         if (self.anisotropic_elasticity=="cubic"):
-            C, y1111, y1122, y1212 = make_cubic_elasticity_stiffness_tensor(self.dim,self.moduli,self.mesh,self.mf)
+            C, self.y1111, self.y1122, self.y1212, self.E, self.nu, self.G = \
+                make_cubic_elasticity_stiffness_tensor(self.dim,self.moduli,self.mesh,self.mf)
         elif (self.anisotropic_elasticity=="orthotropic"):
-            C = make_orthotropic_elasticity_stiffness_tensor(self.dim,self.moduli,self.mesh,self.mf)
+            C, self.E1, self.E2, self.E3, self.nu12, self.nu21, self.nu13, self.nu31, self.nu23, self.nu32,\
+                self.G12, self.G13, self.G23 = make_orthotropic_elasticity_stiffness_tensor(self.dim,self.moduli,self.mesh,self.mf)
         if (self.anisotropic_degradation and ("D_crystal" in self.mp)):
             self.Cdam = []
             for n in range(self.damage_dim):
@@ -336,7 +355,7 @@ class EXD:
         if self.damage_model == "AT1":
             cw = Constant(8/3.)
             w = lambda d: d
-        elif damage_model == "AT2":
+        elif self.damage_model == "AT2":
             cw = Constant(2.)
             w = lambda d: d**2
         self.make_B_sample(d,d_prev_iter)
