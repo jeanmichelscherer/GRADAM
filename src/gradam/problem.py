@@ -45,6 +45,7 @@ import subprocess
 #import h5py
 from mpi4py import MPI as pyMPI
 from .j_integral import *
+from .version_date import *
 
 ## Setting up damage-part optimization solver
 class DamageProblem(OptimisationProblem):
@@ -167,7 +168,7 @@ class FractureProblem:
         else:
             self.Vd = VectorFunctionSpace(self.mesh, "CG", self.d_degree, dim=self.mat.damage_dim)
         self.V0 = FunctionSpace(self.mesh, "DG", 0)
-        self.Vsig = TensorFunctionSpace(self.mesh, "CG", 1, shape=(3,3))
+        self.Vsig = TensorFunctionSpace(self.mesh, "CG", self.u_degree, shape=(3,3))
         self.VV = VectorFunctionSpace(self.mesh, "DG", 0, dim=3)
         self.Vr = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3))
         self.Vmetric = FunctionSpace(self.mesh, "CG", self.d_degree)  
@@ -189,6 +190,7 @@ class FractureProblem:
         self.d_ar= Function(self.Vd,name="Damage field after remeshing") 
         self.d_ub = self.mat.dub
         self.sig = Function(self.Vsig,name="Stress")
+        self.eel = Function(self.Vsig,name="ElasticStrain")
         self.epspos = Function(self.Vsig,name="Strain (+)")
         self.epsneg = Function(self.Vsig,name="Strain (-)")
         #self.V1 = Function(self.VV,name="V1")
@@ -198,6 +200,8 @@ class FractureProblem:
         #     self.tmp_u = Function(self.Vu)
         #     self.tmp_d = Function(self.Vd)
         self.R = Function(self.Vr,name="Rotation matrix")
+        self.dissipated = Function(self.V0,name="Plastic dissipation")
+        self.stored = Function(self.V0,name="Stored energy")
         self.P1pos = Function(self.V0,name="P1pos")
         self.P2pos = Function(self.V0,name="P2pos")
         self.P3pos = Function(self.V0,name="P3pos")
@@ -228,36 +232,93 @@ class FractureProblem:
         #return dot(self.load,self.u)*self.ds
         
     def set_energies(self):
-        # Definition of energy densities            
-        # self.Wel = 0.5*inner(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos),eps(self.u))*self.dx
-        self.Wel = 0.5*inner(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos),eps(self.u,self.dim))*self.dx
+        if (not self.mat.behaviour=="linear_elasticity"):
+            self.mb = self.mat.mfront_behaviour.create_material()
+            self.solver_u = mf.MFrontNonlinearProblem(self.u, self.mb, quadrature_degree=1, bcs=self.bcs)
+            self.solver_u.register_external_state_variable("Damage", self.d)
+            '''
+            prm = self.solver_u.solver.parameters
+            #prm['nonlinear_solver'] = 'newton'
+            prm['linear_solver'] = 'gmres' #'mumps' #'minres' #'cg' #'cg' #'mumps' #'gmres' #'petsc' #'umfpack' #'tfqmr'
+            #prm['preconditioner'] = 'petsc_amg' #'ilu' # 'sor' # 'icc' # 'petsc_amg'
+            #prm['krylov_solver']['error_on_nonconvergence'] = True
+            #prm['krylov_solver']['monitor_convergence'] = True
+            #prm['krylov_solver']['absolute_tolerance'] = 1E-14
+            #prm['krylov_solver']['relative_tolerance'] = 1E-14
+            #prm['krylov_solver']['maximum_iterations'] = 10000
+            prm['krylov_solver']['nonzero_initial_guess'] = True            
+            prm['preconditioner'] = 'hypre_amg'
+            prm['absolute_tolerance'] = 1E-6 #-9
+            prm['relative_tolerance'] = 1E-8 #-8
+            #prm['maximum_iterations'] = 1000 #25
+            #prm['relaxation_parameter'] = 1.
+            ##prm['krylov_solver']['gmres']['restart'] = 40
+            ##prm['krylov_solver']['preconditioner']['ilu']['fill_level'] = 0
+            prm["report"] = True
+            #prm['lu_solver']['symmetric'] = True #False
+            '''
+
+            self.solver_u.solver = PETScSNESSolver('newtonls') #'newtontr') #'newtonls')
+            prm = self.solver_u.solver.parameters
+            #prm['nonlinear_solver'] = 'snes'
+            prm['line_search'] =  'bt' #'cp' #'cp' #'nleqerr' # 'bt' # 'basic' # 'l2'
+            #prm['linear_solver'] = 'mumps'
+            prm['linear_solver'] = 'cg' #'gmres'
+            prm['preconditioner'] = 'hypre_amg'
+            prm['krylov_solver']['nonzero_initial_guess'] = False #True
+            #prm['maximum_iterations'] = 50
+            prm['absolute_tolerance'] = 1E-9
+            #prm['report'] = True
+            
+            self.load = self.set_load(self.u)
+            self.solver_u.set_loading(self.load)
+            self.dissipated.vector().set_local(self.mb.data_manager.s1.dissipated_energies)
+            self.dissipated.vector().apply("insert")
+            self.stored.vector().set_local(self.mb.data_manager.s1.stored_energies)
+            self.stored.vector().apply("insert")
+            #print(max(_dummy_function.vector()[:]))
+            self.sigma()
+            #self.eps_elas()
+            ## self.Wel = 0.5*inner(self.sig,self.eel)*self.dx
+            ## self.Wel = 0.5*(1.-self.d)**2*inner(self.sig,self.eel)*self.dx
+            self.Wel = (1.-self.d)**2*self.stored*self.dx
+            #self.Wel = 0.5*self.stored*self.dx
+            self.Wdis = (1.-self.d)**2*self.dissipated*self.dx  
+        else:  
+            # Definition of energy densities            
+            # self.Wel = 0.5*inner(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos),eps(self.u))*self.dx
+            # self.Wel = 0.5*inner(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos),eps(self.u,self.dim))*self.dx
+            self.sigma()
+            self.Wel = 0.5*inner(self.sig,eps(self.u,self.dim))*self.dx
         
         self.Efrac = self.mat.fracture_energy_density(self.d,self.d_prev_iter)
         self.Wfrac = sum(self.Efrac)*self.dx
         self.Wtot = self.Wel + self.Wfrac - self.Wext
+        if (not self.mat.behaviour=="linear_elasticity"):
+            self.Wtot += self.Wdis
 
         # Definition of J integral
         if (self.dim == 2):
             normal3  = as_vector([self.normal[0],self.normal[1],0.])
-            sigma_n3 = dot(normal3, self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos))
+            sigma_n3 = dot(normal3, self.sig)
             sigma_n  = as_vector([sigma_n3[0],sigma_n3[1]])
         elif (self.dim == 3):
             normal3 = self.normal
-            sigma_n = dot(normal3, self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos))
+            sigma_n = dot(normal3, self.sig)
             
         if (not self.dsJ==[]):
             self.J=[]
             for c in self.dsJ:
-                #self.J.append( (0.5*inner(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos),eps(self.u,self.dim))*self.normal[1] \
+                #self.J.append( (0.5*inner(self.sig,eps(self.u,self.dim))*self.normal[1] \
                 #               - inner(sigma_n, grad(self.u)[:,0]) ) * c ) # for outer boundaries
-                self.J.append( (0.5*inner(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos),eps(self.u,self.dim))*self.normal[1]) * c )
+                self.J.append( (0.5*inner(self.sig,eps(self.u,self.dim))*self.normal[1]) * c )
                 self.J.append( (- inner(sigma_n, grad(self.u)[:,0]) ) * c ) # for outer boundaries
             for c in self.dsJ:
-                #self.J.append( (0.5*inner(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos),eps(self.u,self.dim))*self.normal[0] \
+                #self.J.append( (0.5*inner(self.sig,eps(self.u,self.dim))*self.normal[0] \
                 #               - inner(sigma_n, grad(self.u)[:,1]) ) * c ) # for outer boundaries
-                self.J.append( (0.5*inner(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos),eps(self.u,self.dim))*self.normal[0] ) * c)
+                self.J.append( (0.5*inner(self.sig,eps(self.u,self.dim))*self.normal[0] ) * c)
                 self.J.append( (- inner(sigma_n, grad(self.u)[:,1]) ) * c ) # for outer boundaries
-                # self.J.append( (0.5*inner(self.mat.sigma(self.u,self.d),eps(self.u,self.dim))*self.normal[1] \
+                # self.J.append( (0.5*inner(self.sig,eps(self.u,self.dim))*self.normal[1] \
                 #                - inner(sigma_n, grad(self.u)[:,0]) )('-') * c ) # for inner boundaries
         
         # Definition of energy derivatives
@@ -276,45 +337,45 @@ class FractureProblem:
 
         # Setting up displacement-part linear solver 
         # LinearVariationalProblem(lhs(self.D2W_u),replace(self.Wext,{self.u:self.u_}), self.u, self.bcs)
-        load = self.set_load(self.u_)
-        if (self.use_hybrid_solver):
-            #self.solver_u = HybridLinearSolver(lhs(self.D2W_u),dot(self.load,self.u_)*self.ds,\
-            self.solver_u = HybridLinearSolver(lhs(self.D2W_u),load,\
-                                               self.u,bcs=self.bcs,parameters={"iteration_switch": 5,\
-                                               "user_switch": True},null_space_basis=self.null_space_basis) #not self.remesh or (self.niter>0)})
-        else:
-            if (not self.mat.tension_compression_asymmetry):
-                #self.problem_u = LinearVariationalProblem(lhs(self.D2W_u),dot(self.load,self.u_)*self.ds,self.u,self.bcs)
-                self.problem_u = LinearVariationalProblem(lhs(self.D2W_u),load,self.u,self.bcs)
-                self.solver_u = LinearVariationalSolver(self.problem_u)
-                self.solver_u.parameters["linear_solver"] = "mumps"
+        if (self.mat.behaviour=='linear_elasticity'):
+            self.load = self.set_load(self.u_)
+            if (self.use_hybrid_solver):
+                #self.solver_u = HybridLinearSolver(lhs(self.D2W_u),dot(self.load,self.u_)*self.ds,\
+                self.solver_u = HybridLinearSolver(lhs(self.D2W_u),self.load,\
+                                                   self.u,bcs=self.bcs,parameters={"iteration_switch": 5,\
+                                                   "user_switch": True},null_space_basis=self.null_space_basis) #not self.remesh or (self.niter>0)})
             else:
-                self.problem_u = NonlinearVariationalProblem(self.DW_u,self.u,self.bcs,J=self.D2W_u)
-                self.solver_u = NonlinearVariationalSolver(self.problem_u)
-                prm = self.solver_u.parameters
-                prm['nonlinear_solver'] = 'newton'
-                prm['newton_solver']['linear_solver'] = 'mumps' #'gmres' #'mumps' #'petsc'
-                
-                prm['newton_solver']['error_on_nonconvergence'] = False #True
-                prm['newton_solver']['absolute_tolerance'] = 1E-9
-                prm['newton_solver']['relative_tolerance'] = 1E-8
-                prm['newton_solver']['maximum_iterations'] = 25 #10000 #25
-                prm['newton_solver']['relaxation_parameter'] = 1.0
-                
-                prm['newton_solver']['lu_solver']['report'] = True
-                #prm['newton_solver']['lu_solver']['reuse_factorization'] = False
-                #prm['newton_solver']['lu_solver']['same_nonzero_pattern'] = False
-                prm['newton_solver']['lu_solver']['symmetric'] = False
-                
-                prm['newton_solver']['krylov_solver']['error_on_nonconvergence'] = True
-                prm['newton_solver']['krylov_solver']['absolute_tolerance'] = 1E-7
-                prm['newton_solver']['krylov_solver']['relative_tolerance'] = 1E-5
-                prm['newton_solver']['krylov_solver']['maximum_iterations'] = 1000
-                prm['newton_solver']['krylov_solver']['nonzero_initial_guess'] = True
-                if prm['newton_solver']['linear_solver'] == 'gmres':
-                    prm['newton_solver']['preconditioner'] = 'ilu'
-                #self.solver_u.parameters["newton_solver"]["linear_solver"] = "mumps"
-
+                if (not self.mat.tension_compression_asymmetry):
+                    #self.problem_u = LinearVariationalProblem(lhs(self.D2W_u),dot(self.load,self.u_)*self.ds,self.u,self.bcs)
+                    self.problem_u = LinearVariationalProblem(lhs(self.D2W_u),self.load,self.u,self.bcs)
+                    self.solver_u = LinearVariationalSolver(self.problem_u)
+                    self.solver_u.parameters["linear_solver"] = "mumps"
+                else:
+                    self.problem_u = NonlinearVariationalProblem(self.DW_u,self.u,self.bcs,J=self.D2W_u)
+                    self.solver_u = NonlinearVariationalSolver(self.problem_u)
+                    prm = self.solver_u.parameters
+                    prm['nonlinear_solver'] = 'newton'
+                    prm['newton_solver']['linear_solver'] = 'mumps' #'gmres' #'mumps' #'petsc'
+                    
+                    prm['newton_solver']['error_on_nonconvergence'] = False #True
+                    prm['newton_solver']['absolute_tolerance'] = 1E-9
+                    prm['newton_solver']['relative_tolerance'] = 1E-8
+                    prm['newton_solver']['maximum_iterations'] = 25 #10000 #25
+                    prm['newton_solver']['relaxation_parameter'] = 1.0
+                    
+                    prm['newton_solver']['lu_solver']['report'] = True
+                    #prm['newton_solver']['lu_solver']['reuse_factorization'] = False
+                    #prm['newton_solver']['lu_solver']['same_nonzero_pattern'] = False
+                    prm['newton_solver']['lu_solver']['symmetric'] = False
+                    
+                    prm['newton_solver']['krylov_solver']['error_on_nonconvergence'] = True
+                    prm['newton_solver']['krylov_solver']['absolute_tolerance'] = 1E-7
+                    prm['newton_solver']['krylov_solver']['relative_tolerance'] = 1E-5
+                    prm['newton_solver']['krylov_solver']['maximum_iterations'] = 1000
+                    prm['newton_solver']['krylov_solver']['nonzero_initial_guess'] = True
+                    if prm['newton_solver']['linear_solver'] == 'gmres':
+                        prm['newton_solver']['preconditioner'] = 'ilu'
+                    #self.solver_u.parameters["newton_solver"]["linear_solver"] = "mumps"              
         
         self.solver_d = PETScTAOSolver()
         self.solver_d.parameters["method"] = "tron"
@@ -346,7 +407,17 @@ class FractureProblem:
 
             # u-solve : gives u_{n+1}^{pred} from d_{n}
             tic_u = time()
-            count = self.solver_u.solve()
+            if self.mat.behaviour=='linear_elasticity':
+                count = self.solver_u.solve()
+                self.sigma()
+            else:
+                self.solver_u.dt = self.dtime
+                count = self.solver_u.solve(self.u.vector())
+                self.dissipated.vector().set_local(self.mb.data_manager.s1.dissipated_energies)
+                self.dissipated.vector().apply("insert")
+                self.stored.vector().set_local(self.mb.data_manager.s1.stored_energies)
+                self.stored.vector().apply("insert")
+                self.sigma()
             self.runtime_u += time() - tic_u
             if self.use_hybrid_solver:
                 self.niter_iterative += count[0]
@@ -446,26 +517,51 @@ class FractureProblem:
 
     def export_J(self,t):
         tic_export = time()
+        self.sigma()
         #os.system('rm %s' % self.prefix+"J_integral.xdmf")
-        self.sig.assign(local_project(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos),self.Vsig))
+        if (self.mat.behaviour=="linear_elasticity"):
+            sigma = Function(self.Vsig,name="Stress")
+            sigma.assign(local_project(self.sig,self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
+            self.results.write(sigma,t) 
+        else:
+            #sigma = Function(self.Vsig,name="Stress")
+            #sigma.assign(local_project((1.-self.d)**2*self.sig,self.Vsig))
+            #self.results.write(sigma,t)
+            self.results.write(self.solver_u.get_flux("Stress", project_on=("CG", 1)),t)
+            #self.results.write((1.-self.d)**2*self.sig,t)
         self.J_results.write(self.u,t)
         self.J_results.write(self.sig,t)
         self.runtime_export += time() - tic_export
             
     def export_all(self,t):
         tic_export = time()
+        self.sigma()
+        if (self.mat.behaviour=="linear_elasticity"):
+            sigma = Function(self.Vsig,name="Stress")
+            sigma.assign(local_project(self.sig,self.Vsig))
+            self.results.write(sigma,t) 
+        else:
+            #sigma = Function(self.Vsig,name="Stress")
+            #sigma.assign(local_project((1.-self.d)**2*self.sig,self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
+            #self.results.write(sigma,t) 
+            self.results.write(self.solver_u.get_flux("Stress", project_on=("CG", 1)),t)
+            #self.results.write((1.-self.d)**2*self.sig,t) 
         self.results.write(self.u,t)
-        self.sig.assign(local_project(self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
-        self.results.write(self.sig,t)
-        self.epspos.assign(local_project(dot(self.mat.R.T,dot(voigt2strain(self.mat.eps_crystal_pos),self.mat.R)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
-        #self.epsneg.assign(local_project(dot(self.mat.R.T,dot(voigt2strain(self.mat.eps_crystal_neg),self.mat.R)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
-        self.results.write(self.epspos,t)
-        #self.results.write(self.epsneg,t)
-        self.R.assign(project(self.mat.R,self.Vr)) #, solver_type='cg', preconditioner_type='hypre_amg'))
-        self.results.write(self.R,t)
+        ##self.epspos.assign(local_project(dot(self.mat.R.T,dot(voigt2strain(self.mat.eps_crystal_pos),self.mat.R)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
+        ##self.epsneg.assign(local_project(dot(self.mat.R.T,dot(voigt2strain(self.mat.eps_crystal_neg),self.mat.R)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
+        ##self.results.write(self.epspos,t)
+        ##self.results.write(self.epsneg,t)
+        # write rotation matrix
+        #self.R.assign(project(self.mat.R,self.Vr)) #, solver_type='cg', preconditioner_type='hypre_amg'))
+        #self.results.write(self.R,t)
         self.results.write(self.mat.phi1,t)
         self.results.write(self.mat.Phi,t)
         self.results.write(self.mat.phi2,t)
+        
+        if (not self.mat.behaviour=='linear_elasticity'):
+            for var in self.mb.get_internal_state_variable_names():
+                self.results.write(self.solver_u.get_state_variable(var,project_on=('DG',0)),t)
+            
         #self.V1.assign(local_project(self.mat.R[0,:],self.VV))
         #self.V2.assign(local_project(self.mat.R[1,:],self.VV))
         #self.V3.assign(local_project(self.mat.R[2,:],self.VV))
@@ -525,6 +621,8 @@ class FractureProblem:
                 self.dtime = min(self.dtime,self.max_dtime)
                 if ((self.t + self.dtime) > self.final_time):
                     self.dtime = self.final_time - self.t
+                if (self.incr==0):
+                    self.dtime = 0
                 for load in self.loads:
                     load[1].t = self.t + self.dtime
                 for uimp in self.Uimp:
@@ -556,6 +654,8 @@ class FractureProblem:
                 F = assemble(self.resultant)
                 Eel = assemble(self.Wel)
                 Ed = assemble(self.Wfrac)
+                if (not self.mat.behaviour=="linear_elasticity"):
+                    Ep = assemble(self.Wdis)
                 Etot = assemble(self.Wtot)
                 Efrac = [assemble(Efrac_i*self.dx) for Efrac_i in self.Efrac]
                 Jint=[]
@@ -655,8 +755,9 @@ class FractureProblem:
                     self.dsJ[i] = dsj(Jmarker)           
             self.ds = Measure("ds", subdomain_data=self.facets)
             self.mat = EXD(self.mat.dim,self.mat.damage_dim,self.mat.mp,\
-                           self.mesh,self.mf,self.mat.geometry,damage_model=self.mat.damage_model,\
-                           anisotropic_elasticity=self.mat.anisotropic_elasticity,damage_tensor=self.mat.damage_tensor)
+                           self.mesh,self.mf,self.mat.geometry,behaviour=self.mat.behaviour,mfront_behaviour=self.mat.mfront_behaviour,\
+                           damage_model=self.mat.damage_model,anisotropic_elasticity=self.mat.anisotropic_elasticity,\
+                           damage_tensor=self.mat.damage_tensor)
             
             # Re-Definition of functions spaces
             self.Vu = VectorFunctionSpace(self.mesh, "CG", self.u_degree, dim=self.dim)
@@ -712,7 +813,8 @@ class FractureProblem:
             LagrangeInterpolator.interpolate(self.metric,tmp)
 
             #tmp = self.sig
-            self.sig = Function(self.Vsig,name="Stress") 
+            self.sig = Function(self.Vsig,name="Stress")
+            self.eel = Function(self.Vsig,name="ElasticStrain") 
             #LagrangeInterpolator.interpolate(self.sig,tmp)
             #tmp = self.V1
             #self.V1 = Function(self.VV,name="V1") 
@@ -738,7 +840,8 @@ class FractureProblem:
             self.myResultant.P2pos = self.P2pos
             self.myResultant.P3pos = self.P3pos
             self.myResultant.ds = self.ds
-            self.resultant = self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos)[1,1]*self.ds(5)
+            
+            self.resultant = self.sig[1,1]*self.ds(5)
             #self.resultant = self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos)[1,1]*self.dsJ[3]
             #self.resultant = self.myResultant.make_resultant() #*Measure("ds", subdomain_data=self.facets)
             
@@ -752,11 +855,46 @@ class FractureProblem:
             self.remesh = False
             self.set_problems() #self.solver_u.params["user_switch"] = (not self.remesh) #
     
+    def sigma(self):
+        if (self.mat.behaviour=="linear_elasticity"):
+            self.sig = self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos)
+        else:
+            s = self.solver_u.get_flux("Stress", project_on=("DG", 0))
+            if self.dim==2:
+                sig = as_matrix([[s[0],          s[3]/sqrt(2.), 0.],\
+                                 [s[3]/sqrt(2.), s[1],          0.],\
+                                 [0.,              0.,         s[2]]])
+            else:
+                sig = as_matrix([[s[0],          s[3]/sqrt(2.), s[4]/sqrt(2.)],\
+                                 [s[3]/sqrt(2.), s[1],          s[5]/sqrt(2.)],\
+                                 [s[4]/sqrt(2.), s[5]/sqrt(2.), s[2]]])
+            #self.sig.vector()[:] = sig.vector()
+            #self.sig = Function(self.Vsig,name="Stress")
+            self.sig.assign(local_project(sig, self.Vsig))
+            #self.sig *= (1.-self.d)**2
+    
+    def eps_elas(self):
+        if (not self.mat.behaviour=="linear_elasticity"):
+            e = self.solver_u.get_state_variable("ElasticStrain", project_on=("DG", 0))
+            if self.dim==2:
+                e = as_matrix([[e[0],          e[3]/sqrt(2.), 0.],\
+                                 [e[3]/sqrt(2.), e[1],          0.],\
+                                 [0.,              0.,         e[2]]])
+            else:
+                e = as_matrix([[e[0],          e[3]/sqrt(2.), e[4]/sqrt(2.)],\
+                                 [e[3]/sqrt(2.), e[1],          e[5]/sqrt(2.)],\
+                                 [e[4]/sqrt(2.), e[5]/sqrt(2.), e[2]]])
+            self.eel.assign(local_project(e, self.Vsig))
+    
     def startup_message(self):
         if (self.rank==0):
-            print(' ##########      gradam-1.0.0       ##########\n',\
-                  '########## Jean-Michel Scherer (C) ##########\n',\
-                  '##########   scherer@caltech.edu   ##########\n')
+            version, date = get_version_date(package_name='gradam')
+            print(' ##################################################################\n',\
+                   '##########                 gradam-%s                 ##########\n' % version,\
+                   '##########            Jean-Michel Scherer (C)           ##########\n',\
+                   '##########              scherer@caltech.edu             ##########\n',\
+                   '##########    Installed on: %s    ##########\n' % date,\
+                   '##################################################################\n')
         
     # def user_postprocess(self):
     #     if (self.niter % 10) ==0:
