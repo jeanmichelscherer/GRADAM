@@ -167,7 +167,7 @@ class Remesher:
         os.system("gmsh -%s %s" % (dim,geo))
         
     def cleanup_files(self,remeshing_index):
-        files = [f for f in os.listdir(self.mesh_path) if '_'+str(remeshing_index) in f]
+        files = [f for f in os.listdir(self.mesh_path) if '_'+str(remeshing_index)+'.' in f]
         if (remeshing_index==0):
             files.remove(self.mesh_file+'_remeshed_0.msh')
         for f in files:
