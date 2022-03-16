@@ -75,7 +75,7 @@ damage.setGlossaryName("Damage");
 
 @Integrator {
   using size_type = unsigned short;
-  const auto& ss = MericCailletaudSingleCrystalViscoPlasticitySlipSystems<real>::getSlipSystems();
+  const auto& ss = FCCMericCailletaudSingleCrystalViscoPlasticitySlipSystems<real>::getSlipSystems();
   const auto& m = ss.him;
   constexpr const auto eeps = 1.e-12;
   const auto seps = eeps * D(0, 0);
