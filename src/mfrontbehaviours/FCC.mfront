@@ -1,0 +1,12 @@
+@DSL Implicit;
+@Behaviour FCC;
+@Author Jean-Michel Scherer;
+@Date 16 / 03 / 2022;
+@Description {
+}
+
+@OrthotropicBehaviour;
+@CrystalStructure FCC;
+
+// 111 planes
+@SlidingSystem<0, 1, -1>{1, 1, 1};

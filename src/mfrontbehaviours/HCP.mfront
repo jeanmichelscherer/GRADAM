@@ -1,0 +1,26 @@
+@DSL Implicit;
+@Behaviour HCP;
+@Author Jean-Michel Scherer;
+@Date 16 / 03 / 2022;
+@Description {
+}
+
+@OrthotropicBehaviour;
+@CrystalStructure HCP;
+
+// See for instance: https://doi.org/10.1016/j.ijsolstr.2012.02.020
+
+// prismatic
+// @SlipSystem <1,-2,1,0>{1,0,-1,0};
+
+// basal
+@SlipSystem <1,-2,1,0>{0,0,0,1};
+
+// first-order pyramidal pi1 <a>
+// @SlipSystem <1,-2,1,0>{1,0,-1,1};
+
+// firs-order pyramidal pi1 <c+a>
+// @SlipSystem <1,1,-2,-3>{1,0,-1,1};
+
+// second-order pyramidal pi2 <c+a>
+// @SlipSystem <1,1,-2,-3>{1,1,-2,2};

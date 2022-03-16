@@ -1,0 +1,18 @@
+@DSL Implicit;
+@Behaviour BCC;
+@Author Jean-Michel Scherer;
+@Date 16 / 03 / 2022;
+@Description {
+}
+
+@OrthotropicBehaviour;
+@CrystalStructure BCC;
+
+// 110 planes
+// @SlipSystem<1,1,1>{1,-1,0};
+
+// 112 planes
+// @SlipSystem<1,1,2>{1,1,-1};
+
+// 100 and 112 planes
+@SlipSystems { <1,1,1>{1,-1,0}, <1,1,2>{1,1,-1} };
