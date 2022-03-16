@@ -59,8 +59,13 @@ p.setEntryName("EquivalentViscoplasticSlip");
 @AuxiliaryStateVariable strain a[Nss];
 a.setEntryName("BackStrain");
 
-@AuxiliaryStateVariable strain dPsi_d;
-dPsi_d.setEntryName("DissipatedEnergyVariation");
+@LocalVariable strain dPsi_d;
+
+@AuxiliaryStateVariable strain Psi_pl;
+Psi_pl.setEntryName("DissipatedEnergy");
+
+@AuxiliaryStateVariable Stensor epl;
+epl.setGlossaryName("PlasticStrain");
 
 @Parameter real kres = 1e-5;
 kres.setEntryName("ResidualStiffness");
@@ -80,6 +85,7 @@ damage.setGlossaryName("Damage");
       exp_bp[i] = exp(-b * p_);
   }
   dPsi_d = 0.;
+  epl = 0. * Stensor::Id();
   for (size_type i = 0; i != Nss; ++i) {
     const auto tau = sig | ss.mus[i];
     auto r = tau0;
@@ -113,6 +119,7 @@ damage.setGlossaryName("Damage");
       dfg_ddg(i, j) += dt * dv * dr * sgn;
     }
     dPsi_d += tau * dg[i];
+    epl = g[i] * ss.mus[i];
   }
 }
 
@@ -126,6 +133,7 @@ damage.setGlossaryName("Damage");
   }
   const auto gd = (1-damage) * (1-damage) + kres;
   sig = gd * sig;
+  Psi_pl += dPsi_d;
 }
 
 @TangentOperator{ 
@@ -136,7 +144,7 @@ damage.setGlossaryName("Damage");
 }
 
 @DissipatedEnergy{
-  Psi_d = Psi_d + dPsi_d;
+  Psi_d += dPsi_d;
 }
 
 @InternalEnergy {
