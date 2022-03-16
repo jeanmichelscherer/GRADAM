@@ -527,7 +527,7 @@ class FractureProblem:
             #sigma = Function(self.Vsig,name="Stress")
             #sigma.assign(local_project((1.-self.d)**2*self.sig,self.Vsig))
             #self.results.write(sigma,t)
-            self.results.write(self.solver_u.get_flux("Stress", project_on=("CG", 1)),t)
+            self.results.write(self.solver_u.get_flux("Stress", project_on=("DG", 0)),t)
             #self.results.write((1.-self.d)**2*self.sig,t)
         self.J_results.write(self.u,t)
         self.J_results.write(self.sig,t)
@@ -543,8 +543,10 @@ class FractureProblem:
         else:
             #sigma = Function(self.Vsig,name="Stress")
             #sigma.assign(local_project((1.-self.d)**2*self.sig,self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
-            #self.results.write(sigma,t) 
-            self.results.write(self.solver_u.get_flux("Stress", project_on=("CG", 1)),t)
+            #Vsig = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3))
+            #sigma.assign(local_project(self.sig,Vsig))
+            #self.results.write(sigma,t)
+            self.results.write(self.solver_u.get_flux("Stress", project_on=("DG", 0)),t)
             #self.results.write((1.-self.d)**2*self.sig,t) 
         self.results.write(self.u,t)
         ##self.epspos.assign(local_project(dot(self.mat.R.T,dot(voigt2strain(self.mat.eps_crystal_pos),self.mat.R)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
@@ -587,9 +589,9 @@ class FractureProblem:
             f = open(self.prefix+"results.txt","a")
             Jint_cols = ''
             if (not self.dsJ==[]):
-                Jint_cols = "[15-%s]_J_integrals " % (15+len(self.dsJ)-1)
-            f.write("#1_incr 2_time 3_F 4_Eel 5_Ed 6_Etot 7_niter 8_niter_tot 9_niter_TAO 10_niter_iterative 11_niter_direct 12_runtime 13_runtime_u 14_runtime_d "\
-                    + Jint_cols + "[%s-%s]_Efrac_i " % (15+len(self.dsJ),15+len(self.dsJ)+self.mat.damage_dim-1) + "\n")
+                Jint_cols = "[15-%s]_J_integrals " % (16+len(self.dsJ)-1)
+            f.write("#1_incr 2_time 3_F 4_Eel 5_Ed 6_Ep 7_Etot 8_niter 9_niter_tot 10_niter_TAO 11_niter_iterative 12_niter_direct 13_runtime 14_runtime_u 15_runtime_d "\
+                    + Jint_cols + "[%s-%s]_Efrac_i " % (16+len(self.dsJ),16+len(self.dsJ)+self.mat.damage_dim-1) + "\n")
             f.close()
             if (not self.JIntegral==None):
                 for contour in self.JIntegral.keys():
@@ -654,6 +656,7 @@ class FractureProblem:
                 F = assemble(self.resultant)
                 Eel = assemble(self.Wel)
                 Ed = assemble(self.Wfrac)
+                Ep = 0.
                 if (not self.mat.behaviour=="linear_elasticity"):
                     Ep = assemble(self.Wdis)
                 Etot = assemble(self.Wtot)
@@ -673,7 +676,7 @@ class FractureProblem:
                     
                 self.runtime += time() - tic
                 if (self.rank==0):
-                    log = ([self.incr,self.t,F,Eel,Ed,Etot,self.niter,self.niter_tot, \
+                    log = ([self.incr,self.t,F,Eel,Ed,Ep,Etot,self.niter,self.niter_tot, \
                            self.niter_TAO,self.niter_iterative,self.niter_direct,self.runtime,\
                            self.runtime_u,self.runtime_d] + Jint + Efrac)
                     f = open(self.prefix+"results.txt","a")
