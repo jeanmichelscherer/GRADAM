@@ -1,6 +1,6 @@
 //@ModellingHypothesis 'Tridimensional';
 //@ModellingHypothesis 'PlaneStrain';
-@Behaviour<generic> 'src/libBehaviour.so' 'MericCailletaudSingleCrystalViscoPlasticity';
+@Behaviour<generic> 'src/libBehaviour.so' 'FCCMericCailletaudSingleCrystalViscoPlasticity';
 
 @MaterialProperty<constant> 'n' 5.;
 @MaterialProperty<constant> 'K' .01;
