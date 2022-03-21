@@ -10,7 +10,8 @@
 @OrthotropicBehaviour<Pipe>;
 
 @Algorithm NewtonRaphson;
-@Epsilon 1.e-12;
+@Epsilon 1.e-9;
+@MaximumNumberOfIterations 200;
 @Theta 1;
 
 @Brick StandardElasticity{

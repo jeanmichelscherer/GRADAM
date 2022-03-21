@@ -5,12 +5,13 @@
 @Description {
 }
 
-//@GenerateMTestFileOnFailure true;
+@GenerateMTestFileOnFailure true;
 @ModellingHypothesis PlaneStrain; //Tridimensional;
 @OrthotropicBehaviour<Pipe>;
 
 @Algorithm NewtonRaphson;
-@Epsilon 1.e-12;
+@Epsilon 1.e-9;
+@MaximumNumberOfIterations 200;
 @Theta 1;
 
 @Brick StandardElasticity{
@@ -75,6 +76,7 @@ kres.setEntryName("ResidualStiffness");
 damage.setGlossaryName("Damage");
 
 @Integrator {
+//cout << "iter = " << iter << endl;
   using size_type = unsigned short;
   const auto& ss = FCCMericCailletaudSingleCrystalViscoPlasticity2DSlipSystems<real>::getSlipSystems();
   const auto& m = ss.him;
@@ -124,7 +126,9 @@ damage.setGlossaryName("Damage");
     }
     dPsi_d += tau * dg[i];
     epl = g[i] * mu2D;
+//cout << "fg["<< i << "] = " << fg[i] << endl;
   }
+//cout << "feel = " << feel << endl;
 }
 
 @UpdateAuxiliaryStateVariables {
