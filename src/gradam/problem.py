@@ -261,14 +261,16 @@ class FractureProblem:
             self.solver_u.solver = PETScSNESSolver('newtonls') #'newtontr') #'newtonls')
             prm = self.solver_u.solver.parameters
             #prm['nonlinear_solver'] = 'snes'
-            prm['line_search'] =  'bt' #'cp' #'cp' #'nleqerr' # 'bt' # 'basic' # 'l2'
+            #prm['line_search'] =  'bt' #'cp' #'cp' #'nleqerr' # 'bt' # 'basic' # 'l2'
+            prm['line_search'] =  'nleqerr'
             #prm['linear_solver'] = 'mumps'
-            prm['linear_solver'] = 'cg' #'gmres'
-            prm['preconditioner'] = 'hypre_amg'
-            prm['krylov_solver']['nonzero_initial_guess'] = False #True
+            prm['linear_solver'] = 'cg' #'gmres' #'cg' #'gmres'
+            prm['preconditioner'] = 'amg' #'hypre_amg'
+            prm['krylov_solver']['nonzero_initial_guess'] = False # True
             #prm['maximum_iterations'] = 50
-            prm['absolute_tolerance'] = 1E-9
-            #prm['report'] = True
+            prm['absolute_tolerance'] = 1E-5
+            #prm['relative_tolerance'] = 1E-8
+            #prm['report'] = False #True
             
             self.load = self.set_load(self.u)
             self.solver_u.set_loading(self.load)
