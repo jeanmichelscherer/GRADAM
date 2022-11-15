@@ -1,9 +1,11 @@
 //@ModellingHypothesis 'Tridimensional';
-//@ModellingHypothesis 'PlaneStrain';
-@Behaviour<generic> 'src/libBehaviour.so' 'FCCMericCailletaudSingleCrystalViscoPlasticity';
+@ModellingHypothesis 'PlaneStrain';
+@Behaviour<generic> 'src/libBehaviour.so' 'FCCMericCailletaudSingleCrystalViscoPlasticity2D';
 
-@MaterialProperty<constant> 'n' 5.;
-@MaterialProperty<constant> 'K' .01;
+@MaximumNumberOfSubSteps 200;
+
+@MaterialProperty<constant> 'n' 1.;
+@MaterialProperty<constant> 'K' .0001;
 @MaterialProperty<constant> 'tau0' 1.;
 @MaterialProperty<constant> 'Q' 0.;
 @MaterialProperty<constant> 'b' .1;
@@ -37,8 +39,8 @@
 
 @ImposedStrain<function> 'EXX' '0.*t';
 @ImposedStrain<function> 'EYY' '0.*t';
-@ImposedStrain<function> 'EZZ' '0.*t';
+//@ImposedStrain<function> 'EZZ' '0.*t';
 @ImposedStrain<function> 'EXY' 'sqrt(2.)*t';
-@ImposedStrain<function> 'EXZ' '0.*t';
-@ImposedStrain<function> 'EYZ' '0.*t';
-@Times {0.,40. in 400};
+//@ImposedStrain<function> 'EXZ' '0.*t';
+//@ImposedStrain<function> 'EYZ' '0.*t';
+@Times {0.,40. in 40};

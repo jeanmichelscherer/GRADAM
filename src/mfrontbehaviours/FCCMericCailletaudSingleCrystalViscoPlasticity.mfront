@@ -1,7 +1,7 @@
 @DSL Implicit;
 @Behaviour FCCMericCailletaudSingleCrystalViscoPlasticity;
 @Author Thomas Helfer, Jean-Michel Scherer;
-@Date 08 / 03 / 2022;
+@Date 02 / 11 / 2022;
 @Description {
 }
 
@@ -9,7 +9,7 @@
 @OrthotropicBehaviour;
 
 @Algorithm NewtonRaphson;
-@Epsilon 1.e-12;
+@Epsilon 1.e-14;
 @Theta 1;
 
 @Brick StandardElasticity{
@@ -51,13 +51,16 @@
 
 //@IntegrationVariable strain g[Nss];
 @StateVariable strain g[Nss];
-g.setEntryName("ViscoplasticSlip");
+g.setEntryName("PlasticSlip");
 
 @AuxiliaryStateVariable strain p[Nss];
 p.setEntryName("EquivalentViscoplasticSlip");
 
 @AuxiliaryStateVariable strain a[Nss];
 a.setEntryName("BackStrain");
+
+@AuxiliaryStateVariable stress tau[Nss];
+tau.setEntryName("ResolvedShearStress");
 
 @LocalVariable strain dPsi_d;
 
@@ -78,7 +81,7 @@ damage.setGlossaryName("Damage");
   const auto& ss = FCCMericCailletaudSingleCrystalViscoPlasticitySlipSystems<real>::getSlipSystems();
   const auto& m = ss.him;
   constexpr const auto eeps = 1.e-12;
-  //const auto seps = eeps * D(0, 0);
+  const auto seps = eeps * D(0, 0);
   real exp_bp[Nss];
   for (size_type i = 0; i != Nss; ++i) {
       const auto p_ = p[i] + theta * abs(dg[i]);
@@ -87,7 +90,8 @@ damage.setGlossaryName("Damage");
   dPsi_d = 0.;
   epl = 0. * Stensor::Id();
   for (size_type i = 0; i != Nss; ++i) {
-    const auto tau = sig | ss.mus[i];
+    //const auto tau = sig | ss.mus[i];
+    tau[i] = sig | ss.mus[i];
     auto r = tau0;
     for (size_type j = 0; j != Nss; ++j) {
       r += Q * m(i, j) * (1 - exp_bp[j]);
@@ -95,12 +99,11 @@ damage.setGlossaryName("Damage");
     const auto da =  //
         (dg[i] - d * a[i] * abs(dg[i])) / (1 + theta * d * abs(dg[i]));
     const auto x = C * (a[i] + theta * da);
-    const auto f = max(abs(tau - x) - r, stress(0));
+    const auto f = max(abs(tau[i] - x) - r, stress(0));
 //    if (f > 1.1 * K) {
-//cout << "FALSE" << endl;
 //      return false;
 //    }
-    const auto sgn = tau - x > 0 ? 1 : -1;
+    const auto sgn = tau[i] - x > 0 ? 1 : -1;
     // elasticity
     feel += dg[i] * ss.mus[i];
     dfeel_ddg(i) = ss.mus[i];
@@ -119,8 +122,8 @@ damage.setGlossaryName("Damage");
       const auto dr = Q * m(i, j) * theta * b * exp_bp[j] * sgn_gj;
       dfg_ddg(i, j) += dt * dv * dr * sgn;
     }
-    dPsi_d += tau * dg[i];
-    epl = g[i] * ss.mus[i];
+    dPsi_d += tau[i] * dg[i];
+    epl += g[i] * ss.mus[i];
   }
 }
 
@@ -137,7 +140,7 @@ damage.setGlossaryName("Damage");
   Psi_pl += dPsi_d;
 }
 
-@TangentOperator{ 
+@TangentOperator{
   const auto gd = (1-damage) * (1-damage) + kres;
   Stensor4 iJe;
   getPartialJacobianInvert(iJe);
