@@ -1,24 +1,35 @@
-@DSL Implicit;
-@Behaviour FCCMericCailletaudSingleCrystalViscoPlasticity2D;
-@Author Jean-Michel Scherer;
-@Date 18 / 03 / 2022;
+@DSL ImplicitFiniteStrain;
+@Behaviour FCCMericCailletaudFiniteStrainSingleCrystalViscoPlasticity;
+@Author Thomas Helfer, Jean-Michel Scherer;
+@Date 02 / 11 / 2022;
 @Description {
 }
 
-@GenerateMTestFileOnFailure true;
-@ModellingHypothesis PlaneStrain; //Tridimensional;
-@OrthotropicBehaviour<Pipe>;
+@ModellingHypothesis Tridimensional;
+@OrthotropicBehaviour;
 
 @Algorithm NewtonRaphson;
-@Epsilon 1.e-9;
-@MaximumNumberOfIterations 200;
+@Epsilon 1.e-14;
 @Theta 1;
 
-@Brick StandardElasticity{
+/**/
+@Brick FiniteStrainSingleCrystal{
+  young_modulus1 : 1., //208000,
+  young_modulus2 : 1., //208000,
+  young_modulus3 : 1., //208000,
+  poisson_ratio12 : 0.3,
+  poisson_ratio23 : 0.3,
+  poisson_ratio13 : 0.3,
+  shear_modulus12 : 0.384615384615385, //80000,
+  shear_modulus23 : 0.384615384615385, //80000,
+  shear_modulus13 : 0.384615384615385, //80000
+  shifted_elastic_deformation_gradient : true
+};
+/**/
 /*
-  young_modulus: 1.0,
-  poisson_ratio: 0.3
-*/
+@Brick FiniteStrainSingleCrystal{
+  //young_modulus: 1.0,
+  //poisson_ratio: 0.3
   young_modulus1 : 1.,
   young_modulus2 : 1.,
   young_modulus3 : 1.,
@@ -27,8 +38,10 @@
   poisson_ratio13 : 0.3,
   shear_modulus12 : 0.384615384615385,
   shear_modulus23 : 0.384615384615385,
-  shear_modulus13 : 0.384615384615385
+  shear_modulus13 : 0.384615384615385,
+  shifted_elastic_deformation_gradient : true
 };
+*/
 
 @CrystalStructure FCC;
 @SlipSystem<0, 1, -1>{1, 1, 1};
@@ -52,8 +65,8 @@
 @MaterialProperty real C;
 
 //@IntegrationVariable strain g[Nss];
-@StateVariable strain g[Nss];
-g.setEntryName("ViscoplasticSlip");
+//@StateVariable strain g[Nss];
+//g.setEntryName("PlasticSlip");
 
 @AuxiliaryStateVariable strain p[Nss];
 p.setEntryName("EquivalentViscoplasticSlip");
@@ -61,13 +74,16 @@ p.setEntryName("EquivalentViscoplasticSlip");
 @AuxiliaryStateVariable strain a[Nss];
 a.setEntryName("BackStrain");
 
+@AuxiliaryStateVariable stress tau[Nss];
+tau.setEntryName("ResolvedShearStress");
+
 @LocalVariable strain dPsi_d;
 
 @AuxiliaryStateVariable strain Psi_pl;
 Psi_pl.setEntryName("DissipatedEnergy");
 
-@AuxiliaryStateVariable Stensor epl;
-epl.setGlossaryName("PlasticStrain");
+@AuxiliaryStateVariable tensor<3u,real> Fp;
+Fp.setEntryName("PlasticPartOfTheDeformationGradient");
 
 @Parameter real kres = 1e-5;
 kres.setEntryName("ResidualStiffness");
@@ -76,22 +92,20 @@ kres.setEntryName("ResidualStiffness");
 damage.setGlossaryName("Damage");
 
 @Integrator {
-//cout << "iter = " << iter << endl;
   using size_type = unsigned short;
-  const auto& ss = FCCMericCailletaudSingleCrystalViscoPlasticity2DSlipSystems<real>::getSlipSystems();
   const auto& m = ss.him;
-  //constexpr const auto eeps = 1.e-12;
-  //const auto seps = eeps * D(0, 0);
+  constexpr const auto eeps = 1.e-12;
+  const auto seps = eeps * D(0, 0);
   real exp_bp[Nss];
   for (size_type i = 0; i != Nss; ++i) {
       const auto p_ = p[i] + theta * abs(dg[i]);
       exp_bp[i] = exp(-b * p_);
   }
   dPsi_d = 0.;
-  epl = 0. * Stensor::Id();
+  Fp = tensor<3u,real>::Id();
   for (size_type i = 0; i != Nss; ++i) {
-    stensor<3,real> sig3D = {sig(0),sig(1),sig(2),sig(3),0.,0.};
-    const auto tau = sig3D | ss.mus[i];
+    //const auto tau = M | ss.mu[i];
+    tau[i] = M | ss.mu[i];
     auto r = tau0;
     for (size_type j = 0; j != Nss; ++j) {
       r += Q * m(i, j) * (1 - exp_bp[j]);
@@ -99,22 +113,17 @@ damage.setGlossaryName("Damage");
     const auto da =  //
         (dg[i] - d * a[i] * abs(dg[i])) / (1 + theta * d * abs(dg[i]));
     const auto x = C * (a[i] + theta * da);
-    const auto f = max(abs(tau - x) - r, stress(0));
+    const auto f = max(abs(tau[i] - x) - r, stress(0));
 //    if (f > 1.1 * K) {
-//cout << "FALSE" << endl;
 //      return false;
 //    }
-    const auto sgn = tau - x > 0 ? 1 : -1;
-    // elasticity
-    stensor<2,real> mu2D = {ss.mus[i](0),ss.mus[i](1),ss.mus[i](2),ss.mus[i](3)};
-    feel += dg[i] * mu2D;
-    dfeel_ddg(i) = mu2D;
+    const auto sgn = tau[i] - x > 0 ? 1 : -1;
     // viscoplasticity
     const auto v = pow(f / K, n);
     //const auto dv = n * v / (max(f, seps));
     const auto dv = (n / K) * pow(f / K, n - 1);
     fg[i] -= dt * v * sgn;
-    dfg_ddeel(i) = -dt * dv * theta * (mu2D | D);
+    dfg_ddeel(i) = -dt * dv * (ss.mu[i] | dM_ddeel);
     const auto sgn_gi = dg(i) > 0 ? 1 : -1;
     const auto dda_ddg =
         (1 - d * a[i] * sgn_gi) / (power<2>(1 + theta * d * abs(dg[i])));
@@ -124,15 +133,15 @@ damage.setGlossaryName("Damage");
       const auto dr = Q * m(i, j) * theta * b * exp_bp[j] * sgn_gj;
       dfg_ddg(i, j) += dt * dv * dr * sgn;
     }
-    dPsi_d += tau * dg[i];
-    epl = g[i] * mu2D;
-//cout << "fg["<< i << "] = " << fg[i] << endl;
+    dPsi_d += tau[i] * dg[i];
+    // Fp += g[i] * ss.mu[i]; // this is wrong
   }
-//cout << "feel = " << feel << endl;
 }
 
 @UpdateAuxiliaryStateVariables {
   using size_type = unsigned short;
+  //const auto& ss = FCCMericCailletaudFiniteStrainSingleCrystalViscoPlasticity<real>::getSlipSystems();
+  //Fp = tensor<3u,real>::Id();
   for (size_type i = 0; i != Nss; ++i) {
     p[i] += abs(dg[i]);
     const auto da =  //
@@ -142,14 +151,15 @@ damage.setGlossaryName("Damage");
   const auto gd = (1-damage) * (1-damage) + kres;
   sig = gd * sig;
   Psi_pl += dPsi_d;
+  Fp = invert(Fe+tensor<3u,real>::Id())*F1;
 }
 
-@TangentOperator{ 
+/*
+@TangentOperator<DTAU_DDF,Append,AtEnd>{ //<DTAU_DDF>{
   const auto gd = (1-damage) * (1-damage) + kres;
-  Stensor4 iJe;
-  getPartialJacobianInvert(iJe);
-  Dt = gd * D * iJe;
+  Dt = gd * Dt;
 }
+*/
 
 @DissipatedEnergy{
   Psi_d += dPsi_d;

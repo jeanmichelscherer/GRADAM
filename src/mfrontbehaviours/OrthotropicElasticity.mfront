@@ -1,0 +1,57 @@
+@DSL Implicit;
+@Behaviour OrthotropicElasticity;
+@Author Thomas Helfer, Jean-Michel Scherer;
+@Date 15 / 04 / 2022;
+@Description {
+}
+
+@OrthotropicBehaviour<Pipe>;
+@ModellingHypotheses {".+"};
+
+@Algorithm NewtonRaphson;
+@Epsilon 1.e-14;
+@Theta 1;
+
+@ExternalStateVariable real damage;
+damage.setGlossaryName("Damage");
+
+@Parameter real kres = 1e-5;
+kres.setEntryName("ResidualStiffness");
+
+@Brick StandardElasticity{
+/*
+  young_modulus: 1.0,
+  poisson_ratio: 0.3
+*/
+  young_modulus1 : 1.,
+  young_modulus2 : 1.,
+  young_modulus3 : 1.,
+  poisson_ratio12 : 0.3,
+  poisson_ratio23 : 0.3,
+  poisson_ratio13 : 0.3,
+  shear_modulus12 : 0.384615384615385,
+  shear_modulus23 : 0.384615384615385,
+  shear_modulus13 : 0.384615384615385
+};
+
+@UpdateAuxiliaryStateVariables {
+  const auto gd = (1-damage) * (1-damage) + kres;
+  sig = gd * sig;
+}
+
+@TangentOperator{
+  const auto gd = (1-damage) * (1-damage) + kres;
+  Stensor4 iJe;
+  getPartialJacobianInvert(iJe);
+  Dt = gd * D * iJe;
+}
+
+@DissipatedEnergy{
+  Psi_d = 0.;
+}
+
+@InternalEnergy {
+  const auto gd = (1 - damage) * (1 - damage) + kres;
+  Psi_s = (0.5/gd) * (sig | eel);
+}
+

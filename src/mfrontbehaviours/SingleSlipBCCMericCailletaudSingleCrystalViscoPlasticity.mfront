@@ -1,17 +1,15 @@
 @DSL Implicit;
-@Behaviour FCCMericCailletaudSingleCrystalRateIndependentPlasticity2D;
-@Author Jean-Michel Scherer;
-@Date 18 / 03 / 2022;
+@Behaviour SingleSlipBCCMericCailletaudSingleCrystalViscoPlasticity;
+@Author Thomas Helfer, Jean-Michel Scherer;
+@Date 02 / 11 / 2022;
 @Description {
 }
 
-//@GenerateMTestFileOnFailure true;
-@ModellingHypothesis PlaneStrain; //Tridimensional;
-@OrthotropicBehaviour<Pipe>;
+@ModellingHypothesis Tridimensional;
+@OrthotropicBehaviour;
 
 @Algorithm NewtonRaphson;
-@Epsilon 1.e-9;
-@MaximumNumberOfIterations 200;
+@Epsilon 1.e-14;
 @Theta 1;
 
 @Brick StandardElasticity{
@@ -30,8 +28,8 @@
   shear_modulus13 : 0.384615384615385
 };
 
-@CrystalStructure FCC;
-@SlipSystem<0, 1, -1>{1, 1, 1};
+@CrystalStructure BCC;
+@SlipSystem<1, 1, 1>{0, 1, -1};
 //@InteractionMatrix{1, 1, 0.6, 1.8, 1.6, 12.3, 1.6};
 @InteractionMatrix{1, 0., 0., 0., 0., 0., 0.};
 
@@ -50,17 +48,20 @@
 @MaterialProperty real tau0;
 @MaterialProperty real d;
 @MaterialProperty real C;
-@MaterialProperty real m0;
+@MaterialProperty real SingleSlipCoeff;
 
 //@IntegrationVariable strain g[Nss];
 @StateVariable strain g[Nss];
-g.setEntryName("ViscoplasticSlip");
+g.setEntryName("PlasticSlip");
 
 @AuxiliaryStateVariable strain p[Nss];
 p.setEntryName("EquivalentViscoplasticSlip");
 
 @AuxiliaryStateVariable strain a[Nss];
 a.setEntryName("BackStrain");
+
+@AuxiliaryStateVariable stress tau[Nss];
+tau.setEntryName("ResolvedShearStress");
 
 @LocalVariable strain dPsi_d;
 
@@ -76,27 +77,12 @@ kres.setEntryName("ResidualStiffness");
 @ExternalStateVariable real damage;
 damage.setGlossaryName("Damage");
 
-@AuxiliaryStateVariable strain lambda;
-lambda.setEntryName("lambda");
-
-@Parameter real rate_independent_tol = 1e-3;
-rate_independent_tol.setEntryName("ResidualIndependentTolerance");
-
-//@LocalVariable strain dg_[Nss];
-//@LocalVariable strain ddg;
-@LocalVariable strain fmax;
-
-@InitLocalVariables{
-  lambda = 1.;
-  //ddg = 0.;
-}
-
 @Integrator {
   using size_type = unsigned short;
-  const auto& ss = FCCMericCailletaudSingleCrystalRateIndependentPlasticity2DSlipSystems<real>::getSlipSystems();
+  const auto& ss = SingleSlipBCCMericCailletaudSingleCrystalViscoPlasticitySlipSystems<real>::getSlipSystems();
   const auto& m = ss.him;
-  //constexpr const auto eeps = 1.e-12;
-  //const auto seps = eeps * D(0, 0);
+  constexpr const auto eeps = 1.e-12;
+  const auto seps = eeps * D(0, 0);
   real exp_bp[Nss];
   for (size_type i = 0; i != Nss; ++i) {
       const auto p_ = p[i] + theta * abs(dg[i]);
@@ -104,34 +90,31 @@ rate_independent_tol.setEntryName("ResidualIndependentTolerance");
   }
   dPsi_d = 0.;
   epl = 0. * Stensor::Id();
-  //ddg = 0.;
-  fmax = 0.;
   for (size_type i = 0; i != Nss; ++i) {
-    stensor<3,real> sig3D = {sig(0),sig(1),sig(2),sig(3),0.,0.};
-    const auto tau = sig3D | ss.mus[i];
+    //const auto tau = sig | ss.mus[i];
+    tau[i] = sig | ss.mus[i];
     auto r = tau0;
+    r = (i==0) ? r : SingleSlipCoeff*tau0; // to artificially enforce single slip on first system only
     for (size_type j = 0; j != Nss; ++j) {
       r += Q * m(i, j) * (1 - exp_bp[j]);
     }
     const auto da =  //
         (dg[i] - d * a[i] * abs(dg[i])) / (1 + theta * d * abs(dg[i]));
     const auto x = C * (a[i] + theta * da);
-    const auto f = max(abs(tau - x) - r, stress(0));
-//    if (f > (1.1 * K / lambda)) {
-//cout << "FALSE" << endl;
+    const auto f = max(abs(tau[i] - x) - r, stress(0));
+//    if (f > 1.1 * K) {
 //      return false;
 //    }
-    const auto sgn = tau - x > 0 ? 1 : -1;
+    const auto sgn = tau[i] - x > 0 ? 1 : -1;
     // elasticity
-    stensor<2,real> mu2D = {ss.mus[i](0),ss.mus[i](1),ss.mus[i](2),ss.mus[i](3)};
-    feel += dg[i] * mu2D;
-    dfeel_ddg(i) = mu2D;
+    feel += dg[i] * ss.mus[i];
+    dfeel_ddg(i) = ss.mus[i];
     // viscoplasticity
-    const auto v = lambda * pow(f / K, n);
-    //const auto dv = lambda * n * v / (max(f, seps));
-    const auto dv = lambda * (n / K) * pow(f / K, n - 1);
+    const auto v = pow(f / K, n);
+    //const auto dv = n * v / (max(f, seps));
+    const auto dv = (n / K) * pow(f / K, n - 1);
     fg[i] -= dt * v * sgn;
-    dfg_ddeel(i) = -dt * dv * theta * (mu2D | D);
+    dfg_ddeel(i) = -dt * dv * theta * (ss.mus[i] | D);
     const auto sgn_gi = dg(i) > 0 ? 1 : -1;
     const auto dda_ddg =
         (1 - d * a[i] * sgn_gi) / (power<2>(1 + theta * d * abs(dg[i])));
@@ -141,31 +124,8 @@ rate_independent_tol.setEntryName("ResidualIndependentTolerance");
       const auto dr = Q * m(i, j) * theta * b * exp_bp[j] * sgn_gj;
       dfg_ddg(i, j) += dt * dv * dr * sgn;
     }
-    dPsi_d += tau * dg[i];
-    epl = g[i] * mu2D;
-    //ddg += (dg_[i] - dg[i])*(dg_[i] - dg[i]);
-    //dg_[i] = dg[i];
-    fmax = max(f,fmax);
-//cout << "fg = " << fg[i] << endl;
-  }
-  //ddg = sqrt(ddg) / Nss;
-//cout << "feel = " << feel << endl;
-}
-
-@AdditionalConvergenceChecks{
-//cout << "lambda = " << lambda << endl;
-//cout << "ddg = " << ddg << endl;
-//cout << "sum_f = " << sum_f << endl;
-//cout << "converged: " << converged << endl;
-//cout << "lambda: " << lambda << endl;
-  if (converged) {
-    //if ((ddg < 1.e-8) and (sum_f<1.e-4)) {
-    if ((fmax<rate_independent_tol*tau0)) {
-      converged = true;
-    } else {
-      lambda = m0*lambda;
-      converged = false;
-    }
+    dPsi_d += tau[i] * dg[i];
+    epl += g[i] * ss.mus[i];
   }
 }
 
@@ -182,14 +142,11 @@ rate_independent_tol.setEntryName("ResidualIndependentTolerance");
   Psi_pl += dPsi_d;
 }
 
-@TangentOperator{ 
+@TangentOperator{
   const auto gd = (1-damage) * (1-damage) + kres;
   Stensor4 iJe;
   getPartialJacobianInvert(iJe);
   Dt = gd * D * iJe;
-//  if (dPsi_d > 1.e-6) {
-//cout << Dt << endl;
-//  }
 }
 
 @DissipatedEnergy{
