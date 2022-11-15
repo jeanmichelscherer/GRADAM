@@ -65,7 +65,7 @@ Heav = lambda x: (sign(x)+1.)/2.
 class EXD:
     """ Elastic Crystal Damage (EXD) model with X variables and associated fracture energies """ 
     def __init__(self,dim,damage_dim,material_parameters,mesh,mf,geometry,behaviour="linear_elasticity",\
-                 mfront_behaviour=None,damage_model="AT1",anisotropic_elasticity="cubic",damage_tensor=[False,0,0]):
+                 mfront_behaviour=None,damage_model="AT1",anisotropic_elasticity="cubic",damage_tensor=[False,0,0],orientation='from_euler'):
         self.mp = material_parameters
         self.dim = dim
         self.damage_dim = damage_dim
@@ -107,6 +107,7 @@ class EXD:
         self.spheric_deviatoric_decomposition = [False]
         self.cleavage_planes_decomposition = False
         self.spectral_decomposition = False
+        self.orientation = orientation
         self.C, self.R, self.phi1, self.Phi, self.phi2 = self.setup_behaviour()
         self.behaviour = behaviour
         self.mfront_behaviour = mfront_behaviour
@@ -140,9 +141,11 @@ class EXD:
                 self.Cdam.append( dot(dot(as_matrix(D),C),as_matrix(D)) )  
         
         # compute rotation matrix for the set of euler angles associated to the mesh
-        R, phi1, Phi, phi2 = make_rotation_matrix_from_euler(self.dim, self.geometry, self.mesh, self.mf)
-        if self.geometry.endswith("single_crystal"):
-           R, v1, v2, v3  = make_rotation_matrix_from_V1V2V3(self.dim, self.geometry, self.mesh, self.mf)    
+        #if self.orientation=='from_euler':
+        R, phi1, Phi, phi2 = make_rotation_matrix_from_euler(self.dim, self.geometry, self.mesh, self.mf, self.orientation)
+        #if self.geometry.endswith("single_crystal"):
+        #elif self.orientation=='from_vector':
+        #    R, v1, v2, v3  = make_rotation_matrix_from_V1V2V3(self.dim, self.geometry, self.mesh, self.mf)    
         return C, R, phi1, Phi, phi2  
 
     def sigma0(self,e):

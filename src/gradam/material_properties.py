@@ -277,6 +277,7 @@ def make_fracture_properties_per_domain(dim,
         def eval_cell(self, values, x, cell):
             k = self.mf[cell.index]-1
             for i in range(damage_dim):
+                #print(i,k)
                 values[i] = Gc_[k][i]
         def value_shape(self):
             if (damage_dim==1):

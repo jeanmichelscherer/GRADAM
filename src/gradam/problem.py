@@ -87,7 +87,8 @@ class FractureProblem:
         if (not os.path.isdir(self.prefix)):
             os.system("mkdir %s" % self.prefix)
         self.bcs = []
-        self.bc_d =[]
+        self.bc_d_lb = []
+        self.bc_d_ub = []
         self.Uimp = [Expression("t", t=0, degree=0)]
         self.incr = 0
         self.incr_save = 1
@@ -168,7 +169,7 @@ class FractureProblem:
         else:
             self.Vd = VectorFunctionSpace(self.mesh, "CG", self.d_degree, dim=self.mat.damage_dim)
         self.V0 = FunctionSpace(self.mesh, "DG", 0)
-        self.Vsig = TensorFunctionSpace(self.mesh, "CG", self.u_degree, shape=(3,3))
+        self.Vsig = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3)) #self.u_degree, shape=(3,3))
         self.VV = VectorFunctionSpace(self.mesh, "DG", 0, dim=3)
         self.Vr = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3))
         self.Vmetric = FunctionSpace(self.mesh, "CG", self.d_degree)  
@@ -234,7 +235,7 @@ class FractureProblem:
     def set_energies(self):
         if (not self.mat.behaviour=="linear_elasticity"):
             self.mb = self.mat.mfront_behaviour.create_material()
-            self.solver_u = mf.MFrontNonlinearProblem(self.u, self.mb, quadrature_degree=1, bcs=self.bcs)
+            self.solver_u = mf.MFrontNonlinearProblem(self.u, self.mb, quadrature_degree=self.mat.mfront_behaviour.quadrature_degree, bcs=self.bcs)
             self.solver_u.register_external_state_variable("Damage", self.d)
             '''
             prm = self.solver_u.solver.parameters
@@ -258,6 +259,7 @@ class FractureProblem:
             #prm['lu_solver']['symmetric'] = True #False
             '''
 
+            ''''''
             self.solver_u.solver = PETScSNESSolver('newtonls') #'newtontr') #'newtonls')
             prm = self.solver_u.solver.parameters
             #prm['nonlinear_solver'] = 'snes'
@@ -268,9 +270,12 @@ class FractureProblem:
             prm['preconditioner'] = 'amg' #'hypre_amg'
             prm['krylov_solver']['nonzero_initial_guess'] = False # True
             #prm['maximum_iterations'] = 50
-            prm['absolute_tolerance'] = 1E-5
-            #prm['relative_tolerance'] = 1E-8
+            tol = 1.0E-6
+            prm['absolute_tolerance'] = tol
+            prm['relative_tolerance'] = tol
+            prm['solution_tolerance'] = tol
             #prm['report'] = False #True
+            ''''''
             
             self.load = self.set_load(self.u)
             self.solver_u.set_loading(self.load)
@@ -400,8 +405,10 @@ class FractureProblem:
             self.d_prev.assign(self.d) 
         
         # boundary conditions for damage problem
-        for bc in self.bc_d:
+        for bc in self.bc_d_lb:
             bc.apply(self.d_lb.vector())
+        for bc in self.bc_d_ub:
+            bc.apply(self.d_ub.vector())
         
         while (DeltaE>self.staggered_solver["tol"]) and (self.niter<self.staggered_solver["iter_max"]): 
             if self.rank == 0:
@@ -453,6 +460,9 @@ class FractureProblem:
             self.runtime_d += time() - tic_d
             
             self.d_prev_iter.assign(self.d)
+
+            if (not self.mat.behaviour=='linear_elasticity'):
+                self.sigma()
 
             # Energy computation
             tic_assemble = time()
@@ -524,15 +534,20 @@ class FractureProblem:
         if (self.mat.behaviour=="linear_elasticity"):
             sigma = Function(self.Vsig,name="Stress")
             sigma.assign(local_project(self.sig,self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
-            self.results.write(sigma,t) 
+            self.J_results.write(sigma,t) 
         else:
             #sigma = Function(self.Vsig,name="Stress")
             #sigma.assign(local_project((1.-self.d)**2*self.sig,self.Vsig))
             #self.results.write(sigma,t)
-            self.results.write(self.solver_u.get_flux("Stress", project_on=("DG", 0)),t)
+            flux_names = self.solver_u.material.get_flux_names()
+            stress_name = "MissingStress?"
+            for name in flux_names:
+                if "Stress" in name:
+                    stress_name = name
+            self.J_results.write((1-self.d)**2*self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True),t)
             #self.results.write((1.-self.d)**2*self.sig,t)
         self.J_results.write(self.u,t)
-        self.J_results.write(self.sig,t)
+        #self.J_results.write(self.sig,t)
         self.runtime_export += time() - tic_export
             
     def export_all(self,t):
@@ -548,7 +563,16 @@ class FractureProblem:
             #Vsig = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3))
             #sigma.assign(local_project(self.sig,Vsig))
             #self.results.write(sigma,t)
-            self.results.write(self.solver_u.get_flux("Stress", project_on=("DG", 0)),t)
+            flux_names = self.solver_u.material.get_flux_names()
+            stress_name = "MissingStress?"
+            for name in flux_names:
+                if "Stress" in name:
+                    stress_name = name
+            sigma = Function(self.Vsig,name=stress_name)
+            #sig = (1.-self.d)**2*self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True)
+            sigma.assign(local_project(self.sig,self.Vsig))
+            self.results.write(sigma,t)
+            #self.results.write(self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True),t)
             #self.results.write((1.-self.d)**2*self.sig,t) 
         self.results.write(self.u,t)
         ##self.epspos.assign(local_project(dot(self.mat.R.T,dot(voigt2strain(self.mat.eps_crystal_pos),self.mat.R)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
@@ -564,7 +588,10 @@ class FractureProblem:
         
         if (not self.mat.behaviour=='linear_elasticity'):
             for var in self.mb.get_internal_state_variable_names():
-                self.results.write(self.solver_u.get_state_variable(var,project_on=('DG',0)),t)
+                as_tensor = False
+                if ("Deformation" in var) or ("ElasticStrain"==var) or ("PlasticStrain"==var):
+                    as_tensor = True
+                self.results.write(self.solver_u.get_state_variable(var,project_on=('DG',0),as_tensor=as_tensor),t)
             
         #self.V1.assign(local_project(self.mat.R[0,:],self.VV))
         #self.V2.assign(local_project(self.mat.R[1,:],self.VV))
@@ -575,8 +602,8 @@ class FractureProblem:
         #self.results.write(self.P1pos,t)
         #self.results.write(self.P2pos,t)
         #self.results.write(self.P3pos,t)
-        #self.Efrac_field.assign(local_project(sum(self.Efrac),self.V0))
-        #self.results.write(self.Efrac_field,t)
+        self.Efrac_field.assign(local_project(sum(self.Efrac),self.V0))
+        self.results.write(self.Efrac_field,t)
         #self.stiffness.assign(local_project(self.mat.C,self.Vstiffness))
         #self.results.write(self.stiffness,t)
 
@@ -632,7 +659,7 @@ class FractureProblem:
                 for uimp in self.Uimp:
                     uimp.t = self.t + self.dtime
             if self.rank == 0:
-                print( "Increment %i | Loading : %.5e"%(self.incr,self.t+self.dtime))
+                print( "Increment %i | Time : %.5e | dt : %.5e"%(self.incr,self.t+self.dtime,self.dtime))
 
             self.staggered_solve()
 
@@ -679,8 +706,8 @@ class FractureProblem:
                 self.runtime += time() - tic
                 if (self.rank==0):
                     log = ([self.incr,self.t,F,Eel,Ed,Ep,Etot,self.niter,self.niter_tot, \
-                           self.niter_TAO,self.niter_iterative,self.niter_direct,self.runtime,\
-                           self.runtime_u,self.runtime_d] + Jint + Efrac)
+                            self.niter_TAO,self.niter_iterative,self.niter_direct,self.runtime,\
+                            self.runtime_u,self.runtime_d] + Jint + Efrac)
                     f = open(self.prefix+"results.txt","a")
                     f.write(' '.join(map(str, log))+"\n")
                     f.close()
@@ -837,7 +864,7 @@ class FractureProblem:
             self.myBCS.Vu = self.Vu
             self.myBCS.Vd = self.Vd
             self.myBCS.facets = self.facets
-            self.bcs, self.bc_d = self.myBCS.make_bcs(self.dim,self.mat.damage_dim)
+            self.bcs, self.bc_d_lb, self.bc_d_ub = self.myBCS.make_bcs(self.dim,self.mat.damage_dim)
 
             self.myResultant.u = self.u
             self.myResultant.d = self.d
@@ -864,15 +891,34 @@ class FractureProblem:
         if (self.mat.behaviour=="linear_elasticity"):
             self.sig = self.mat.sigma(self.u,self.d,self.P1pos,self.P2pos,self.P3pos)
         else:
-            s = self.solver_u.get_flux("Stress", project_on=("DG", 0))
-            if self.dim==2:
-                sig = as_matrix([[s[0],          s[3]/sqrt(2.), 0.],\
-                                 [s[3]/sqrt(2.), s[1],          0.],\
-                                 [0.,              0.,         s[2]]])
-            else:
-                sig = as_matrix([[s[0],          s[3]/sqrt(2.), s[4]/sqrt(2.)],\
-                                 [s[3]/sqrt(2.), s[1],          s[5]/sqrt(2.)],\
-                                 [s[4]/sqrt(2.), s[5]/sqrt(2.), s[2]]])
+            flux_names = self.solver_u.material.get_flux_names()
+            stress_name = "MissingStress?"
+            for name in flux_names:
+                if "Stress" in name:
+                    stress_name = name
+            
+            #sig = (1-self.d)**2*self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True) # NOK because the (1-d)^2 factor on stored energy must be added in the fenics programm, not the mfront behaviour (seen as variable not a constant)
+            sig = self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True)
+            ''' not needed if as_tensor = True
+            if stress_name=="Stress":
+                if self.dim==2:
+                    sig = as_matrix([[s[0],          s[3]/sqrt(2.), 0.],\
+                                     [s[3]/sqrt(2.), s[1],          0.],\
+                                     [0.,              0.,        s[2]]])
+                else:
+                    sig = as_matrix([[s[0],          s[3]/sqrt(2.), s[4]/sqrt(2.)],\
+                                     [s[3]/sqrt(2.), s[1],          s[5]/sqrt(2.)],\
+                                     [s[4]/sqrt(2.), s[5]/sqrt(2.),          s[2]]])
+            elif stress_name == "FirstPiolaKirchhoffStress":
+                if self.dim==2:
+                    sig = as_matrix([[s[0],          s[3],          0.],\
+                                     [s[3],          s[1],          0.],\
+                                     [0.,              0.,        s[2]]])
+                else:
+                    sig = as_matrix([[s[0],          s[3],        s[5]],\
+                                     [s[4],          s[1],        s[7]],\
+                                     [s[6],          s[8],        s[2]]])
+            '''
             #self.sig.vector()[:] = sig.vector()
             #self.sig = Function(self.Vsig,name="Stress")
             self.sig.assign(local_project(sig, self.Vsig))
@@ -880,15 +926,17 @@ class FractureProblem:
     
     def eps_elas(self):
         if (not self.mat.behaviour=="linear_elasticity"):
-            e = self.solver_u.get_state_variable("ElasticStrain", project_on=("DG", 0))
+            e = self.solver_u.get_state_variable("ElasticStrain", project_on=("DG", 0), as_tensor=True)
+            ''' not needed if as_tensor = True
             if self.dim==2:
-                e = as_matrix([[e[0],          e[3]/sqrt(2.), 0.],\
-                                 [e[3]/sqrt(2.), e[1],          0.],\
-                                 [0.,              0.,         e[2]]])
+                e = as_matrix([[e[0],             e[3]/sqrt(2.),          0.],\
+                                 [e[3]/sqrt(2.),           e[1],          0.],\
+                                 [0.,                        0.,        e[2]]])
             else:
-                e = as_matrix([[e[0],          e[3]/sqrt(2.), e[4]/sqrt(2.)],\
-                                 [e[3]/sqrt(2.), e[1],          e[5]/sqrt(2.)],\
-                                 [e[4]/sqrt(2.), e[5]/sqrt(2.), e[2]]])
+                e = as_matrix([[e[0],            e[3]/sqrt(2.),          e[4]/sqrt(2.)],\
+                                 [e[3]/sqrt(2.),          e[1],          e[5]/sqrt(2.)],\
+                                 [e[4]/sqrt(2.), e[5]/sqrt(2.),                   e[2]]])
+            '''
             self.eel.assign(local_project(e, self.Vsig))
     
     def startup_message(self):
