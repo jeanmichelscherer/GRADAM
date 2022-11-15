@@ -544,7 +544,7 @@ class FractureProblem:
             for name in flux_names:
                 if "Stress" in name:
                     stress_name = name
-            self.J_results.write((1-self.d)**2*self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True),t)
+            self.J_results.write(self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True),t)
             #self.results.write((1.-self.d)**2*self.sig,t)
         self.J_results.write(self.u,t)
         #self.J_results.write(self.sig,t)
@@ -568,10 +568,10 @@ class FractureProblem:
             for name in flux_names:
                 if "Stress" in name:
                     stress_name = name
-            sigma = Function(self.Vsig,name=stress_name)
-            #sig = (1.-self.d)**2*self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True)
-            sigma.assign(local_project(self.sig,self.Vsig))
-            self.results.write(sigma,t)
+            #sigma = Function(self.Vsig,name=stress_name)
+            ##sig = (1.-self.d)**2*self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True)
+            #sigma.assign(local_project(self.sig,self.Vsig))
+            self.results.write(self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True),t)
             #self.results.write(self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True),t)
             #self.results.write((1.-self.d)**2*self.sig,t) 
         self.results.write(self.u,t)
