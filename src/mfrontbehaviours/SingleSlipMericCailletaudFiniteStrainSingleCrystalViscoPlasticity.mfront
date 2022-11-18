@@ -12,20 +12,19 @@
 @Epsilon 1.e-14;
 @Theta 1;
 
-/**/
 @Brick FiniteStrainSingleCrystal{
-  young_modulus1 : 1., //208000,
-  young_modulus2 : 1., //208000,
-  young_modulus3 : 1., //208000,
-  poisson_ratio12 : 0.3,
-  poisson_ratio23 : 0.3,
-  poisson_ratio13 : 0.3,
-  shear_modulus12 : 0.384615384615385, //80000,
-  shear_modulus23 : 0.384615384615385, //80000,
-  shear_modulus13 : 0.384615384615385, //80000
+  young_modulus1 : "((1-damage)*(1-damage)+kres)*E", //208000,
+  young_modulus2 : "((1-damage)*(1-damage)+kres)*E", //208000,
+  young_modulus3 : "((1-damage)*(1-damage)+kres)*E", //208000,
+  poisson_ratio12 : "nu",
+  poisson_ratio23 : "nu",
+  poisson_ratio13 : "nu",
+  shear_modulus12 : "((1-damage)*(1-damage)+kres)*G", //0.384615384615385", //80000,
+  shear_modulus23 : "((1-damage)*(1-damage)+kres)*G", //0.384615384615385", //80000,
+  shear_modulus13 : "((1-damage)*(1-damage)+kres)*G", //0.384615384615385", //80000
   shifted_elastic_deformation_gradient : true
 };
-/**/
+
 /*
 @Brick FiniteStrainSingleCrystal{
   //young_modulus: 1.0,
@@ -55,6 +54,10 @@
 //@Parameter tau0 = 1.; //66.62;
 //@Parameter d = 0.; //494.0;
 //@Parameter C = 0.; //14363;
+
+@MaterialProperty real E;
+@MaterialProperty real nu;
+@MaterialProperty real G;
 
 @MaterialProperty real n;
 @MaterialProperty real K;
@@ -86,7 +89,7 @@ Psi_pl.setEntryName("DissipatedEnergy");
 @AuxiliaryStateVariable tensor<3u,real> Fp;
 Fp.setEntryName("PlasticPartOfTheDeformationGradient");
 
-@Parameter real kres = 1e-5;
+@Parameter real kres = 1e-12;
 kres.setEntryName("ResidualStiffness");
 
 @ExternalStateVariable real damage;
@@ -104,6 +107,8 @@ damage.setGlossaryName("Damage");
   }
   dPsi_d = 0.;
   Fp = tensor<3u,real>::Id();
+  //const auto damage_ets = damage + ddamage;
+  const auto gd = power<2>(1-(damage + ddamage)) + kres;
   for (size_type i = 0; i != Nss; ++i) {
     //const auto tau = M | ss.mu[i];
     tau[i] = M | ss.mu[i];
@@ -112,10 +117,11 @@ damage.setGlossaryName("Damage");
     for (size_type j = 0; j != Nss; ++j) {
       r += Q * m(i, j) * (1 - exp_bp[j]);
     }
+    r *= gd;
     const auto da =  //
         (dg[i] - d * a[i] * abs(dg[i])) / (1 + theta * d * abs(dg[i]));
-    const auto x = C * (a[i] + theta * da);
-    const auto f = max(abs(tau[i] - x) - r, stress(0));
+    const auto x = gd * C * (a[i] + theta * da);
+    const auto f = max(abs(tau[i] - x) - r, gd*stress(0));
 //    if (f > 1.1 * K) {
 //      return false;
 //    }
@@ -129,14 +135,13 @@ damage.setGlossaryName("Damage");
     const auto sgn_gi = dg(i) > 0 ? 1 : -1;
     const auto dda_ddg =
         (1 - d * a[i] * sgn_gi) / (power<2>(1 + theta * d * abs(dg[i])));
-    dfg_ddg(i, i) += dt * dv * C * theta * dda_ddg;
+    dfg_ddg(i, i) += gd * dt * dv * C * theta * dda_ddg;
     for (size_type j = 0; j != Nss; ++j) {
       const auto sgn_gj = dg(j) > 0 ? 1 : -1;
-      const auto dr = Q * m(i, j) * theta * b * exp_bp[j] * sgn_gj;
+      const auto dr = gd * Q * m(i, j) * theta * b * exp_bp[j] * sgn_gj;
       dfg_ddg(i, j) += dt * dv * dr * sgn;
     }
     dPsi_d += tau[i] * dg[i];
-    // Fp += g[i] * ss.mu[i]; // this is wrong
   }
 }
 
@@ -150,8 +155,8 @@ damage.setGlossaryName("Damage");
         (dg[i] - d * a[i] * abs(dg[i])) / (1 + theta * d * abs(dg[i]));
     a[i] += da;
   }
-  const auto gd = (1-damage) * (1-damage) + kres;
-  sig = gd * sig;
+  //const auto gd = (1-damage) * (1-damage) + kres;
+  //sig = gd * sig;
   Psi_pl += dPsi_d;
   Fp = invert(Fe+tensor<3u,real>::Id())*F1;
 }
@@ -164,10 +169,14 @@ damage.setGlossaryName("Damage");
 */
 
 @DissipatedEnergy{
-  Psi_d += dPsi_d;
+  //Psi_d += dPsi_d;
+  const auto gd = power<2>(1-(damage+ddamage)) + kres;
+  Psi_d += (dPsi_d / gd);
 }
 
 @InternalEnergy {
-  const auto gd = (1 - damage) * (1 - damage) + kres;
+  //const auto gd = (1 - damage) * (1 - damage) + kres;
+  //Psi_s = (0.5 / gd) * (sig | eel);
+  const auto gd = power<2>(1-(damage+ddamage)) + kres;
   Psi_s = (0.5 / gd) * (sig | eel);
 }
