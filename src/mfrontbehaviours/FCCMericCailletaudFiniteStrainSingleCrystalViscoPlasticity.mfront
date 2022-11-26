@@ -43,7 +43,8 @@
 @CrystalStructure FCC;
 @SlipSystem<0, 1, -1>{1, 1, 1};
 //@InteractionMatrix{1, 1, 0.6, 1.8, 1.6, 12.3, 1.6};
-@InteractionMatrix{1, 0., 0., 0., 0., 0., 0.};
+@InteractionMatrix{0., 1., 1., 1., 1., 1., 1.};
+//@InteractionMatrix{"h1", "h2", "h3", "h4", "h5", "h6", "h7"};
 
 //@Parameter n = 1.; //10.0;
 //@Parameter K = 1.; //25.;
@@ -65,6 +66,16 @@
 @MaterialProperty real d;
 @MaterialProperty real C;
 
+/*
+@MaterialProperty real h1;
+@MaterialProperty real h2;
+@MaterialProperty real h3;
+@MaterialProperty real h4;
+@MaterialProperty real h5;
+@MaterialProperty real h6;
+@MaterialProperty real h7;
+*/
+
 //@IntegrationVariable strain g[Nss];
 //@StateVariable strain g[Nss];
 //g.setEntryName("PlasticSlip");
@@ -85,6 +96,9 @@ Psi_pl.setEntryName("DissipatedEnergy");
 
 @AuxiliaryStateVariable tensor<3u,real> Fp;
 Fp.setEntryName("PlasticPartOfTheDeformationGradient");
+
+@AuxiliaryStateVariable real nbact;
+nbact.setEntryName("Nb_active_systems");
 
 @Parameter real kres = 1e-12;
 kres.setEntryName("ResidualStiffness");
@@ -145,11 +159,19 @@ damage.setGlossaryName("Damage");
   using size_type = unsigned short;
   //const auto& ss = FCCMericCailletaudFiniteStrainSingleCrystalViscoPlasticity<real>::getSlipSystems();
   //Fp = tensor<3u,real>::Id();
+  auto dgmax = 0.;
   for (size_type i = 0; i != Nss; ++i) {
     p[i] += abs(dg[i]);
     const auto da =  //
         (dg[i] - d * a[i] * abs(dg[i])) / (1 + theta * d * abs(dg[i]));
     a[i] += da;
+    dgmax = max(abs(dg[i]),dgmax);
+  }
+  nbact = 0.;
+  if (dgmax > 0.) {
+    for (size_type i = 0; i != Nss; ++i) {
+      nbact += abs(dg[i]) / dgmax;
+    }
   }
   //const auto gd = (1-damage) * (1-damage) + kres;
   //sig = gd * sig;
