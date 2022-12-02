@@ -98,7 +98,7 @@ Psi_pl.setEntryName("DissipatedEnergy");
 Fp.setEntryName("PlasticPartOfTheDeformationGradient");
 
 @AuxiliaryStateVariable real nbact;
-nbact.setEntryName("Nb_active_systems");
+nbact.setEntryName("NumberOfActiveSlipSystems");
 
 @Parameter real kres = 1e-12;
 kres.setEntryName("ResidualStiffness");
@@ -196,5 +196,5 @@ damage.setGlossaryName("Damage");
   //const auto gd = (1 - damage) * (1 - damage) + kres;
   //Psi_s = (0.5 / gd) * (sig | eel);
   const auto gd = power<2>(1-(damage+ddamage)) + kres;
-  Psi_s = (0.5/gd) * (sig | eel);
+  Psi_s = (0.5 / gd) * (sig | eel);
 }

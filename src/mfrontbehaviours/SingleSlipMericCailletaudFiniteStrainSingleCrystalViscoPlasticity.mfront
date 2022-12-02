@@ -89,6 +89,9 @@ Psi_pl.setEntryName("DissipatedEnergy");
 @AuxiliaryStateVariable tensor<3u,real> Fp;
 Fp.setEntryName("PlasticPartOfTheDeformationGradient");
 
+@AuxiliaryStateVariable real nbact;
+nbact.setEntryName("NumberOfActiveSlipSystems");
+
 @Parameter real kres = 1e-12;
 kres.setEntryName("ResidualStiffness");
 
@@ -149,11 +152,19 @@ damage.setGlossaryName("Damage");
   using size_type = unsigned short;
   //const auto& ss = FCCMericCailletaudFiniteStrainSingleCrystalViscoPlasticity<real>::getSlipSystems();
   //Fp = tensor<3u,real>::Id();
+  auto dgmax = 0.;
   for (size_type i = 0; i != Nss; ++i) {
     p[i] += abs(dg[i]);
     const auto da =  //
         (dg[i] - d * a[i] * abs(dg[i])) / (1 + theta * d * abs(dg[i]));
     a[i] += da;
+    dgmax = max(abs(dg[i]),dgmax);
+  }
+  nbact = 0.;
+  if (dgmax > 0.) {
+    for (size_type i = 0; i != Nss; ++i) {
+      nbact += abs(dg[i]) / dgmax;
+    }
   }
   //const auto gd = (1-damage) * (1-damage) + kres;
   //sig = gd * sig;

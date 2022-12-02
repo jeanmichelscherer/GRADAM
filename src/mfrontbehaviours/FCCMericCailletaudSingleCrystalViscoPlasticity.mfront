@@ -70,6 +70,9 @@ Psi_pl.setEntryName("DissipatedEnergy");
 @AuxiliaryStateVariable Stensor epl;
 epl.setGlossaryName("PlasticStrain");
 
+@AuxiliaryStateVariable real nbact;
+nbact.setEntryName("NumberOfActiveSlipSystems");
+
 @Parameter real kres = 1e-12;
 kres.setEntryName("ResidualStiffness");
 
@@ -131,11 +134,19 @@ damage.setGlossaryName("Damage");
 
 @UpdateAuxiliaryStateVariables {
   using size_type = unsigned short;
+  auto dgmax = 0.;
   for (size_type i = 0; i != Nss; ++i) {
     p[i] += abs(dg[i]);
     const auto da =  //
         (dg[i] - d * a[i] * abs(dg[i])) / (1 + theta * d * abs(dg[i]));
     a[i] += da;
+    dgmax = max(abs(dg[i]),dgmax);
+  }
+  nbact = 0.;
+  if (dgmax > 0.) {
+    for (size_type i = 0; i != Nss; ++i) {
+      nbact += abs(dg[i]) / dgmax;
+    }
   }
   //const auto gd = (1-damage) * (1-damage) + kres;
   //sig = gd * sig;
