@@ -65,6 +65,7 @@
 @MaterialProperty real tau0;
 @MaterialProperty real d;
 @MaterialProperty real C;
+@MaterialProperty real H;
 
 /*
 @MaterialProperty real h1;
@@ -127,6 +128,7 @@ damage.setGlossaryName("Damage");
     for (size_type j = 0; j != Nss; ++j) {
       r += Q * m(i, j) * (1 - exp_bp[j]);
     }
+    r += H * ( p[i] + theta * abs(dg[i]) );
     r *= gd;
     const auto da =  //
         (dg[i] - d * a[i] * abs(dg[i])) / (1 + theta * d * abs(dg[i]));
@@ -145,7 +147,7 @@ damage.setGlossaryName("Damage");
     const auto sgn_gi = dg(i) > 0 ? 1 : -1;
     const auto dda_ddg =
         (1 - d * a[i] * sgn_gi) / (power<2>(1 + theta * d * abs(dg[i])));
-    dfg_ddg(i, i) += gd * dt * dv * C * theta * dda_ddg;
+    dfg_ddg(i, i) += gd * dt * dv * ( C * theta * dda_ddg + H * theta * sgn_gi * sgn);
     for (size_type j = 0; j != Nss; ++j) {
       const auto sgn_gj = dg(j) > 0 ? 1 : -1;
       const auto dr = gd * Q * m(i, j) * theta * b * exp_bp[j] * sgn_gj;
