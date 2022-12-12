@@ -45,7 +45,10 @@ class MfrontBehaviour:
         
     def set_material_properties(self,dim,mesh,mf,mat_prop):
         for key in self.mat_prop.keys():
-            self.mat_prop[key] = make_property_per_domain(dim,mesh,mf,key,self.mat_prop[key])
+            if (isinstance(self.mat_prop[key],list)):
+                self.mat_prop[key] = make_property_per_domain(dim,mesh,mf,key,self.mat_prop[key])
+            else:
+                self.mat_prop[key] = make_evolving_property_per_domain(dim,mesh,mf,self.mat_prop[key]["function"],key,self.mat_prop[key])
         self.mat_prop = dict(self.mat_prop, **mat_prop) # concatenation of both dicts
         
     def set_rotation_matrix(self,R):

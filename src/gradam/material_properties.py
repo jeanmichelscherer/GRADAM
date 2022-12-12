@@ -53,6 +53,32 @@ def make_property_per_domain(dim,
     mp.interpolate(MP_)
     return mp
 
+def make_evolving_property_per_domain(dim,
+                                      mesh,
+                                      mf,
+                                      mf_local,
+                                      mat_prop_key,
+                                      mat_prop):
+          
+    # interpolate material property
+    class MP(UserExpression):
+        def __init__(self, mf, mf_local, **kwargs):
+            super().__init__(**kwargs)
+            self.mf = mf
+            self.mf_local = mf_local
+        def eval_cell(self, values, x, cell):
+            k = self.mf[cell.index]-1
+            d = self.mf_local(x)
+            v = mat_prop["values"][k]
+            values[0] = v[0] + v[1] / np.max((d,1.e-12))
+        def value_shape(self):
+            return ()
+    V0 = FunctionSpace(mesh, "CG", 1)
+    MP_ = MP(mf,mf_local)
+    mp = Function(V0, name=mat_prop_key)
+    mp.interpolate(MP_)
+    return mp
+
 def make_cubic_elasticity_stiffness_tensor(dim,
                                            moduli, #=[[E1,nu1,G1], [E2,nu2,G2], ..., [En,nun,Gn]]
                                            mesh,
