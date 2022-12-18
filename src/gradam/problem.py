@@ -269,14 +269,14 @@ class FractureProblem:
             prm['linear_solver'] = 'cg' #'gmres' #'cg' #'gmres'
             prm['preconditioner'] = 'amg' #'hypre_amg'
             prm['krylov_solver']['nonzero_initial_guess'] = False # True
-            #prm['maximum_iterations'] = 50
-            tol = 1.0E-6
+            prm['maximum_iterations'] = 200
+            tol = 5.0E-9 #5.0E-9
             prm['absolute_tolerance'] = tol
             prm['relative_tolerance'] = tol
             prm['solution_tolerance'] = tol
             #prm['report'] = False #True
             ''''''
-            
+
             self.load = self.set_load(self.u)
             self.solver_u.set_loading(self.load)
             self.dissipated.vector().set_local(self.mb.data_manager.s1.dissipated_energies)
@@ -287,9 +287,11 @@ class FractureProblem:
             self.sigma()
             #self.eps_elas()
             ## self.Wel = 0.5*inner(self.sig,self.eel)*self.dx
-            ## self.Wel = 0.5*(1.-self.d)**2*inner(self.sig,self.eel)*self.dx
+            #e = self.solver_u.get_state_variable("ElasticStrain", project_on=("DG", 0), as_tensor=True)
+            #self.eel.assign(local_project(e, self.Vsig))
+            #self.Wel = 0.5*(1.-self.d)**2*inner(self.sig,self.eel)*self.dx
             self.Wel = (1.-self.d)**2*self.stored*self.dx
-            #self.Wel = 0.5*self.stored*self.dx
+            ##self.Wel = 0.5*self.stored*self.dx
             self.Wdis = (1.-self.d)**2*self.dissipated*self.dx  
         else:  
             # Definition of energy densities            
@@ -458,11 +460,8 @@ class FractureProblem:
             tic_d = time()
             self.niter_TAO += self.solver_d.solve(dam_prob, self.d.vector(), self.d_lb.vector(), self.d_ub.vector())[0]
             self.runtime_d += time() - tic_d
-            
-            self.d_prev_iter.assign(self.d)
 
-            if (not self.mat.behaviour=='linear_elasticity'):
-                self.sigma()
+            self.d_prev_iter.assign(self.d)
 
             # Energy computation
             tic_assemble = time()
@@ -473,7 +472,7 @@ class FractureProblem:
                 DeltaE = abs(Etot_old/Etot-1)
             else:
                 DeltaE = abs(Etot_old - Etot)
-            
+
             self.niter += 1
             self.niter_tot += 1
             if self.rank == 0:
