@@ -70,13 +70,15 @@ def make_evolving_property_per_domain(dim,
             k = self.mf[cell.index]-1
             d = self.mf_local(x)
             v = mat_prop["values"][k]
-            values[0] = v[0] + v[1] / np.max((d,1.e-12))
+            values[0] = v[0] + (v[0] * v[1] / np.max((d,1.e-2)))
         def value_shape(self):
             return ()
     V0 = FunctionSpace(mesh, "CG", 1)
     MP_ = MP(mf,mf_local)
     mp = Function(V0, name=mat_prop_key)
     mp.interpolate(MP_)
+    file = File("/home/scherer/Documents/Projects/0002_Postdoc2_PhaseFieldFractureAssessment/CrystalPlasticityFracture/Tests/Tension/CottrellNucleation/LayeredSingleCrystal/H.pvd")
+    file << mp
     return mp
 
 def make_cubic_elasticity_stiffness_tensor(dim,
