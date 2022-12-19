@@ -103,6 +103,8 @@ damage.setGlossaryName("Damage");
 
 @Integrator{
 
+  const auto gd = power<2>(1-(damage + ddamage)) + kres;
+
   const unsigned short Nl = 4;
   
   const fsarray<7, double> im_coefficients = {a_self, a_copl, a_hirt, a_lome, a_gli1, a_coli, a_gli2};
@@ -149,7 +151,7 @@ damage.setGlossaryName("Damage");
   real sgn[Nss];
   real Hsi[Nss];
   for(unsigned short i=0;i!=Nss;i++){
-    const stress  tauc = tau0 + mu*sqrt(sum_a_rho_cop[i] + sum_a_rho_obs[i]) + mu*alphaL*sqrt(sum_rhoL);
+    const stress  tauc = gd * (tau0 + mu*sqrt(sum_a_rho_cop[i] + sum_a_rho_obs[i]) + mu*alphaL*sqrt(sum_rhoL));
     //const stress  tau  = ss.mu[i] | M;
     tau[i]  = ss.mu[i] | M;
     sgn[i]  = (tau[i] > 0) ? 1 : -1;
@@ -195,7 +197,7 @@ damage.setGlossaryName("Damage");
     real sqrt_sum_rhoL_prime[Nl];
     for(unsigned short j=0;j!=Nl;j++){
       sqrt_sum_rhoL_prime[j] = 1 / (2 * sqrt(sum_rhoL));
-      dfg_ddrhoL(i,j) = sgn[i]*Hsi[i]*mu*theta*alphaL*sqrt_sum_rhoL_prime[j];
+      dfg_ddrhoL(i,j) = gd*sgn[i]*Hsi[i]*mu*theta*alphaL*sqrt_sum_rhoL_prime[j];
       dfrho_ddrhoL(i,j) = theta*(-dp[i]*sqrt_sum_rhoL_prime[j]) / (KL*rho0);
       int n_plan = (int)i/3;
       if(n_plan == j){
@@ -209,7 +211,7 @@ damage.setGlossaryName("Damage");
     
     dfg_ddeel(i) = -Hsi[i]*(ss.mu[i]|dM_ddeel); 
     for(unsigned short j=0;j!=Nss;j++){
-      dfg_ddrho(i,j) = sgn[i]*Hsi[i]*mu*theta*sqrt_sum_a_rho_prime(i,j);
+      dfg_ddrho(i,j) = gd*sgn[i]*Hsi[i]*mu*theta*sqrt_sum_a_rho_prime(i,j);
       dfg_ddg(i,j) = ((i == j) ? 1 : 0);
       if ((sqrt(sum_a_rho_obs[i])/Kobs + sqrt(sum_a_rho_cop[i])/Kcop) > KS/(dd)){
          dfrho_ddg(i,j) = ((i == j) ? (-sgndp[i]*(sqrt(sum_a_rho_obs[i])/Kobs + sqrt(sum_a_rho_cop[i])/Kcop + sqrt(sum_rhoL)/KL - y*(rho0+rho[i]+theta*drho[i])))/rho0 : 0); 
