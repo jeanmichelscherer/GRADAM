@@ -10,7 +10,9 @@
 
 @Algorithm NewtonRaphson;
 @Epsilon 1.e-14;
-@Theta 1;
+@Theta 1.;
+@CompareToNumericalJacobian false; //true;
+//@JacobianComparisonCriterion 1.e-6;
 
 @Brick FiniteStrainSingleCrystal{
   young_modulus1 : "((1-damage)*(1-damage)+kres)*E", //208000,
@@ -43,6 +45,7 @@
 @CrystalStructure FCC;
 @SlipSystem<0, 1, -1>{1, 1, 1};
 //@InteractionMatrix{1, 1, 0.6, 1.8, 1.6, 12.3, 1.6};
+//@InteractionMatrix{1., 0., 0., 0., 0., 0., 0.};
 @InteractionMatrix{0., 1., 1., 1., 1., 1., 1.};
 //@InteractionMatrix{"h1", "h2", "h3", "h4", "h5", "h6", "h7"};
 
@@ -66,6 +69,8 @@
 @MaterialProperty real d;
 @MaterialProperty real C;
 @MaterialProperty real H;
+@MaterialProperty real GB_distance;
+@MaterialProperty real Ksize;
 
 /*
 @MaterialProperty real h1;
@@ -125,10 +130,12 @@ damage.setGlossaryName("Damage");
     //const auto tau = M | ss.mu[i];
     tau[i] = M | ss.mu[i];
     auto r = tau0;
+    auto Q_GB_distance = Q + Q * (Ksize / max(GB_distance,1e-9));
+    auto H_GB_distance = H; // + H * (Ksize / max(GB_distance,1e-9));
     for (size_type j = 0; j != Nss; ++j) {
-      r += Q * m(i, j) * (1 - exp_bp[j]);
+      r += Q_GB_distance * m(i, j) * (1 - exp_bp[j]);
     }
-    r += H * ( p[i] + theta * abs(dg[i]) );
+    r += H_GB_distance * ( p[i] + theta * abs(dg[i]) );
     r *= gd;
     const auto da =  //
         (dg[i] - d * a[i] * abs(dg[i])) / (1 + theta * d * abs(dg[i]));
@@ -147,10 +154,10 @@ damage.setGlossaryName("Damage");
     const auto sgn_gi = dg(i) > 0 ? 1 : -1;
     const auto dda_ddg =
         (1 - d * a[i] * sgn_gi) / (power<2>(1 + theta * d * abs(dg[i])));
-    dfg_ddg(i, i) += gd * dt * dv * ( C * theta * dda_ddg + H * theta * sgn_gi * sgn);
+    dfg_ddg(i, i) += gd * dt * dv * ( C * theta * dda_ddg + H_GB_distance * theta * sgn_gi * sgn);
     for (size_type j = 0; j != Nss; ++j) {
       const auto sgn_gj = dg(j) > 0 ? 1 : -1;
-      const auto dr = gd * Q * m(i, j) * theta * b * exp_bp[j] * sgn_gj;
+      const auto dr = gd * Q_GB_distance * m(i, j) * theta * b * exp_bp[j] * sgn_gj;
       dfg_ddg(i, j) += dt * dv * dr * sgn;
     }
     dPsi_d += tau[i] * dg[i];
