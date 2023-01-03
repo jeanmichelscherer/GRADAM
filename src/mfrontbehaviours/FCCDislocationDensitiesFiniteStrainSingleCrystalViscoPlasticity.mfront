@@ -93,6 +93,8 @@ damage.setGlossaryName("Damage");
 //@ExternalStateVariable real GB_distance;
 //GB_distance.setGlossaryName("DistanceToGrainBoundary");
 
+@LocalVariable strain dPsi_d;
+
 /**/
 @InitLocalVariables{
   //tau0 = 43 - 0.055*T;
@@ -178,6 +180,7 @@ damage.setGlossaryName("Damage");
      frhoL[i]=(drhoL[i]+AL*max(rhoL0+rhoL[i]+theta*drhoL[i]-rhoLsat,0.)*sum_abs_dgamma[i]*sum_rho_iplan[i])/rhoL0;   
   }
 
+  dPsi_d = 0.;
   for(unsigned short i=0;i!=Nss;i++){
     tfel::math::tmatrix<12,12,real> sqrt_sum_a_rho_prime;        
     tfel::math::tmatrix<12,12,real> sqrt_sum_a_rho_obs_prime;
@@ -221,7 +224,8 @@ damage.setGlossaryName("Damage");
          dfrho_ddrho(i,j) = (((i == j) ? (1 + dp[i]*y) : 0) - dp[i]*(KS/(dd)))/rho0;
 
       }
-    } 
+    }
+    dPsi_d += tau[i] * dg[i]; 
   }
 
   for(unsigned short i=0;i!=Nl;i++){
@@ -240,7 +244,8 @@ damage.setGlossaryName("Damage");
   auto dgmax = 0.;
   for (size_type i = 0; i != Nss; ++i) {
     dgmax = max(abs(dg[i]),dgmax);
-    Psi_pl += tau[i] * dg[i];
+    //tau[i]  = ss.mu[i] | M;
+    //Psi_pl += tau[i] * dg[i];
   }
   nbact = 0.;
   if (dgmax > 0.) {
@@ -248,16 +253,18 @@ damage.setGlossaryName("Damage");
       nbact += abs(dg[i]) / dgmax;
     }
   }
+  Psi_pl += dPsi_d;
   Fp = invert(Fe+tensor<3u,real>::Id())*F1;
 }
 
 @DissipatedEnergy{
   const auto gd = power<2>(1-(damage+ddamage)) + kres;
-  Psi_d += (Psi_pl / gd);
+  //Psi_d += (Psi_pl / gd);
+  Psi_d += (dPsi_d / gd);
 }
 
 @InternalEnergy {
   const auto gd = power<2>(1-(damage+ddamage)) + kres;
-  Psi_s = (0.5 / gd) * (sig | eel);
+  Psi_s = (0.5 / gd) * (convertCauchyStressToSecondPiolaKirchhoffStress(sig, Fe+tensor<3u,real>::Id()) | eel);
 }
 
