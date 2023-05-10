@@ -1,0 +1,36 @@
+@ModellingHypothesis 'PlaneStrain';
+@Behaviour<generic> 'src/libBehaviour.so' 'OrthotropicElasticity';
+
+@MaximumNumberOfSubSteps 200;
+
+////////////Crystal Orientation/////////////
+@Real 'X1'   '1.';
+@Real 'X2'   '0.';
+@Real 'X3'   '0.';
+
+@Real 'Y1'   '0.';
+@Real 'Y2'   '1.';
+@Real 'Y3'   '0.';
+
+@Real 'Z1'   '0.';
+@Real 'Z2'   '0.';
+@Real 'Z3'   '1.';
+
+@Real 'nx'   'sqrt(X1*X1+X2*X2+X3*X3)';
+@Real 'ny'   'sqrt(Y1*Y1+Y2*Y2+Y3*Y3)';
+@Real 'nz'   'sqrt(Z1*Z1+Z2*Z2+Z3*Z3)';
+
+@RotationMatrix {{'X1/nx','X2/nx','X3/nx'},
+                 {'Y1/ny','Y2/ny','Y3/ny'},
+                 {'Z1/nz','Z2/nz','Z3/nz'}};
+
+////////////////////////////////////////////
+@ExternalStateVariable 'Temperature' 293.15;
+
+@ImposedStrain<function> 'EXX' '1.*t';
+//@ImposedStrain<function> 'EYY' '0.*t';
+//@ImposedStrain<function> 'EZZ' '0.*t';
+//@ImposedStrain<function> 'EXY' 'sqrt(2.)*t';
+//@ImposedStrain<function> 'EXZ' '0.*t';
+//@ImposedStrain<function> 'EYZ' '0.*t';
+@Times {0.,40. in 40};

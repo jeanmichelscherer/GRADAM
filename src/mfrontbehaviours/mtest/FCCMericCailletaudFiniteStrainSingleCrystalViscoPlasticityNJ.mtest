@@ -1,0 +1,54 @@
+@ModellingHypothesis 'Tridimensional';
+@Behaviour<generic> 'src/libBehaviour.so' 'FCCMericCailletaudFiniteStrainSingleCrystalViscoPlasticityNJ';
+
+@MaximumNumberOfSubSteps 200;
+
+@MaterialProperty<constant> 'E' 1.;
+@MaterialProperty<constant> 'nu' .3;
+@MaterialProperty<constant> 'G' 0.384615384615385;
+
+@MaterialProperty<constant> 'n' 10.;
+@MaterialProperty<constant> 'K' 5.e-5;
+@MaterialProperty<constant> 'tau0' 1.e-3;
+@MaterialProperty<constant> 'Q' 1.e3; //5.e-2; //1.e3;
+@MaterialProperty<constant> 'b' 10.;
+@MaterialProperty<constant> 'd' 0.; //1.e-7; //0.;
+@MaterialProperty<constant> 'C' 0.; //1.e-7; //0.;
+@MaterialProperty<constant> 'H' 0.; //1.e-5;
+
+////////////Crystal Orientation/////////////
+@Real 'X1'   '1.';
+@Real 'X2'   '0.';
+@Real 'X3'   '0.';
+
+@Real 'Y1'   '0.';
+@Real 'Y2'   '1.';
+@Real 'Y3'   '0.';
+
+@Real 'Z1'   '0.';
+@Real 'Z2'   '0.';
+@Real 'Z3'   '1.';
+
+@Real 'nx'   'sqrt(X1*X1+X2*X2+X3*X3)';
+@Real 'ny'   'sqrt(Y1*Y1+Y2*Y2+Y3*Y3)';
+@Real 'nz'   'sqrt(Z1*Z1+Z2*Z2+Z3*Z3)';
+
+@RotationMatrix {{'X1/nx','X2/nx','X3/nx'},
+                 {'Y1/ny','Y2/ny','Y3/ny'},
+                 {'Z1/nz','Z2/nz','Z3/nz'}};
+
+////////////////////////////////////////////
+@ExternalStateVariable 'Temperature' 293.15;
+@ExternalStateVariable 'Damage' 0.;
+
+@ImposedDeformationGradient<function> 'FXX' '1.';
+@ImposedDeformationGradient<function> 'FYY' '1.';
+@ImposedDeformationGradient<function> 'FZZ' '1.';
+@ImposedDeformationGradient<function> 'FXY' '1.*t';
+@ImposedDeformationGradient<function> 'FXZ' '0.*t';
+@ImposedDeformationGradient<function> 'FYZ' '0.*t';
+@ImposedDeformationGradient<function> 'FYX' '0.*t';
+@ImposedDeformationGradient<function> 'FZX' '0.*t';
+@ImposedDeformationGradient<function> 'FZY' '0.*t';
+
+@Times {0.,6. in 1000};

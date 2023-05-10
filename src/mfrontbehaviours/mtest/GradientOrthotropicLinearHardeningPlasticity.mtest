@@ -1,0 +1,36 @@
+@ModellingHypothesis 'Tridimensional';
+@Behaviour<generic> 'src/libBehaviour.so' 'GradientOrthotropicLinearHardeningPlasticity';
+
+@MaximumNumberOfSubSteps 1;
+
+@MaterialProperty<constant> 'lambda' 1.;
+@MaterialProperty<constant> 'mu' 0.384615384615385;
+
+@MaterialProperty<constant> 'nn' 10.;
+@MaterialProperty<constant> 'K' 1.e-6;
+@MaterialProperty<constant> 's0' 1.e-3;
+@MaterialProperty<constant> 'H' 0.;
+@MaterialProperty<constant> 'A' 1.;
+@MaterialProperty<constant> 'Hx' 1.;
+@MaterialProperty<constant> 'mux' 0.; //1.;
+
+////////////////////////////////////////////
+@ExternalStateVariable 'Temperature' 293.15;
+@ExternalStateVariable 'lagrangeMultiplier' 0.;
+
+@Evolution 'EXX' {0 : 0., 1. : .1};
+
+@ImposedGradient<function> 'TotalStrainXX' 'EXX';
+//@ImposedGradient 'TotalStrainXY' 0.;
+//@ImposedGradient 'TotalStrainXZ' 0.;
+//@ImposedGradient 'TotalStrainYY' 0.;
+//@ImposedGradient 'TotalStrainYZ' 0.;
+//@ImposedGradient 'TotalStrainZZ' 0.;
+//@ImposedThermodynamicForce 'StressXX' 0.;
+@ImposedThermodynamicForce 'StressYY' 0.;
+@ImposedThermodynamicForce 'StressZZ' 0.;
+@ImposedThermodynamicForce 'StressXY' 0.;
+@ImposedThermodynamicForce 'StressXZ' 0.;
+@ImposedThermodynamicForce 'StressYZ' 0.;
+
+@Times {0.,1. in 100};

@@ -1,0 +1,186 @@
+@DSL		ImplicitFiniteStrain;
+@Behaviour	FCC2021GB;
+@Brick		FiniteStrainSingleCrystal;
+@Algorithm      NewtonRaphson;
+
+//@UMATGenerateMTestFileOnFailure true;
+@UMATUseTimeSubStepping[umat] true;
+@UMATMaximumSubStepping 100;
+
+@CrystalStructure FCC;
+@SlidingSystem<1,-1,0>{1,1,1};
+
+@Theta 1.;
+@Epsilon 1.e-12;
+@IterMax 1000;
+
+@MaterialProperty real rho0;
+@MaterialProperty real Gc;
+@MaterialProperty real KS;
+
+@Parameter real rhoL0 = 1.;
+@Parameter real alphaL = 0.;
+@Parameter real KL = 1.e50;
+@Parameter real AL = 0.;
+@Parameter real rhoLsat = 0.;
+
+@Parameter real Kobs = 11.9;
+@Parameter real Kcop = 93.2;
+@Parameter real n = 15.;
+@Parameter real K = 5.;
+@Parameter real rho_ref = 6.45e-8;
+@Parameter real a_self = 0.1405;
+@Parameter real a_copl = 0.0500;
+@Parameter real a_hirt = 0.0484;
+@Parameter real a_lome = 0.1722;
+@Parameter real a_gli1 = 0.0885;
+@Parameter real a_coli = 0.6972;
+@Parameter real a_gli2 = 0.1156;
+@Parameter real tau0 = 10.;
+@Parameter real mu = 75000.;
+
+@StateVariable real rho[Nss];
+@StateVariable real rhoL[4];
+@AuxiliaryStateVariable real dm;
+
+@LocalVariable real dd;
+
+@InitLocalVariables{
+  tau0 = 43 - 0.055*T;
+  mu = (((-3e-5)*T*T) - (5.6e-3)*T + 88)*1000;
+  dd = max(dm,1.e-9);
+}
+
+@Integrator{
+
+  const unsigned short Nl = 4;
+  
+  const fsarray<7, double> im_coefficients = {a_self, a_copl, a_hirt, a_lome, a_gli1, a_coli, a_gli2};
+  const auto im = ss.buildInteractionMatrix(im_coefficients);
+  tfel::math::tmatrix<12,12,real> a; 
+
+  real sum_a_rho[Nss];
+  for(unsigned short i=0;i!=Nss;i++){
+    sum_a_rho[i] = 0;
+    for(unsigned short j=0;j!=Nss;j++){
+        sum_a_rho[i] += im(i,j) * (rho0 + rho[j] + theta*drho[j]);
+    }
+  }
+
+  for(unsigned short i=0;i!=Nss;i++){
+    for(unsigned short j=0;j!=Nss;j++){
+        a(i,j) = im(i,j) * pow(0.14 + 0.86*(log(sqrt(sum_a_rho[i]))/log(sqrt(im(i,j)*rho_ref))),2);
+    }
+  }
+  
+  real sum_a_rho_obs[Nss];
+  real sum_a_rho_cop[Nss];
+
+  for(unsigned short i=0;i!=Nss;i++){
+    sum_a_rho_obs[i] = 0.;
+    sum_a_rho_cop[i] = 0.;
+    for(unsigned short j=0;j!=Nss;j++){
+      if (ss.areCoplanar(i,j)){
+         sum_a_rho_cop[i] += a(i,j)*(rho0 + rho[j] + theta*drho[j]);
+      } else {
+         sum_a_rho_obs[i] += a(i,j)*(rho0 + rho[j] + theta*drho[j]);
+      }
+    }
+  }
+
+  real sum_rhoL;
+  sum_rhoL = 0;
+  for(unsigned short i=0;i!=Nl;i++){
+    sum_rhoL += rhoL0 + rhoL[i] + theta*drhoL[i];
+  }
+
+  real dp[Nss];
+  real sgndp[Nss];
+  real sgn[Nss];
+  real Hsi[Nss];
+  for(unsigned short i=0;i!=Nss;i++){
+    const stress  tauc = tau0 + mu*sqrt(sum_a_rho_cop[i] + sum_a_rho_obs[i]) + mu*alphaL*sqrt(sum_rhoL);
+    const stress  tau  = ss.mu[i] | M;
+    sgn[i]  = (tau > 0) ? 1 : -1;
+    dp[i]   = abs(dg[i]);
+    sgndp[i] = (dg[i] > 0) ? 1 : ((dg[i] < 0) ? -1 : 0);
+    const stress  Dtau = abs(tau) - tauc;
+    Hsi[i] = dt*pow(max(Dtau,0.)/K,n-1)*(n/K);
+
+    real dgi = dt*pow(max(Dtau,0.)/K,n)*sgn[i];
+    fg[i] -= dgi;
+    
+    frho[i] =(drho[i]-dp[i]*(max(sqrt(sum_a_rho_obs[i])/Kobs + sqrt(sum_a_rho_cop[i])/Kcop,KS/(dd)) + sqrt(sum_rhoL)/KL - Gc*(rho0+rho[i]+theta*drho[i])))/rho0; 
+  }
+
+  real sum_abs_dgamma[Nl];
+  real sum_rho_iplan[Nl];
+  for(unsigned short i=0;i!=Nl;i++){
+     sum_abs_dgamma[i] = 0.;
+     sum_rho_iplan[i]  = 0.;
+     for(unsigned short j=0;j!=3;j++){
+        sum_abs_dgamma[i] += abs(dg[i*3+j]);
+        sum_rho_iplan[i]  += rho0 + rho[i*3+j] + theta*drho[i*3+j];
+     }
+     frhoL[i]=(drhoL[i]+AL*max(rhoL0+rhoL[i]+theta*drhoL[i]-rhoLsat,0.)*sum_abs_dgamma[i]*sum_rho_iplan[i])/rhoL0;   
+  }
+
+  for(unsigned short i=0;i!=Nss;i++){
+    tfel::math::tmatrix<12,12,real> sqrt_sum_a_rho_prime;        
+    tfel::math::tmatrix<12,12,real> sqrt_sum_a_rho_obs_prime;
+    tfel::math::tmatrix<12,12,real> sqrt_sum_a_rho_cop_prime;
+    
+    for(unsigned short j=0;j!=Nss;j++){
+      if (ss.areCoplanar(i,j)){
+        sqrt_sum_a_rho_cop_prime(i,j) = (a(i,j) / 2) / sqrt(sum_a_rho_cop[i]);
+        sqrt_sum_a_rho_obs_prime(i,j) = 0;
+      } else {
+        sqrt_sum_a_rho_cop_prime(i,j) = 0;
+        sqrt_sum_a_rho_obs_prime(i,j) = (a(i,j) / 2) / sqrt(sum_a_rho_obs[i]);
+      }
+      sqrt_sum_a_rho_prime(i,j) = (a(i,j) / 2) / sqrt(sum_a_rho_obs[i] + sum_a_rho_cop[i]);
+    }
+
+    real sqrt_sum_rhoL_prime[Nl];
+    for(unsigned short j=0;j!=Nl;j++){
+      sqrt_sum_rhoL_prime[j] = 1 / (2 * sqrt(sum_rhoL));
+      dfg_ddrhoL(i,j) = sgn[i]*Hsi[i]*mu*theta*alphaL*sqrt_sum_rhoL_prime[j];
+      dfrho_ddrhoL(i,j) = theta*(-dp[i]*sqrt_sum_rhoL_prime[j]) / (KL*rho0);
+      int n_plan = (int)i/3;
+      if(n_plan == j){
+        dfrhoL_ddg(j,i) = theta*(AL*max(rhoL0+rhoL[j]+theta*drhoL[j]-rhoLsat,0.)*sum_rho_iplan[j]*sgndp[i])/rhoL0;
+        dfrhoL_ddrho(j,i) = theta*(AL*max(rhoL0+rhoL[j]+theta*drhoL[j]-rhoLsat,0.)*sum_abs_dgamma[j])/rhoL0;
+      } else {
+        dfrhoL_ddg(j,i) = 0;
+        dfrhoL_ddrho(j,i) = 0;
+      }
+    }
+    
+    dfg_ddeel(i) = -Hsi[i]*(ss.mu[i]|dM_ddeel); 
+    for(unsigned short j=0;j!=Nss;j++){
+      dfg_ddrho(i,j) = sgn[i]*Hsi[i]*mu*theta*sqrt_sum_a_rho_prime(i,j);
+      dfg_ddg(i,j) = ((i == j) ? 1 : 0);
+      if ((sqrt(sum_a_rho_obs[i])/Kobs + sqrt(sum_a_rho_cop[i])/Kcop) > KS/(dd)){
+         dfrho_ddg(i,j) = ((i == j) ? (-sgndp[i]*(sqrt(sum_a_rho_obs[i])/Kobs + sqrt(sum_a_rho_cop[i])/Kcop + sqrt(sum_rhoL)/KL - Gc*(rho0+rho[i]+theta*drho[i])))/rho0 : 0); 
+         dfrho_ddrho(i,j) = (((i == j) ? (1 + dp[i]*Gc) : 0) - dp[i]*(sqrt_sum_a_rho_obs_prime(i,j)/Kobs + sqrt_sum_a_rho_cop_prime(i,j)/Kcop))/rho0;
+      } else {
+         dfrho_ddg(i,j) = ((i == j) ? (-sgndp[i]*((KS/(dd)) + sqrt(sum_rhoL)/KL - Gc*(rho0+rho[i]+theta*drho[i])))/rho0 : 0);
+         dfrho_ddrho(i,j) = (((i == j) ? (1 + dp[i]*Gc) : 0) - dp[i]*(KS/(dd)))/rho0;
+
+      }
+    } 
+  }
+
+  for(unsigned short i=0;i!=Nl;i++){
+    for(unsigned short j=0;j!=Nl;j++){
+      if(i==j){
+        dfrhoL_ddrhoL(i,j) = (1+theta*AL*sum_abs_dgamma[i]*sum_rho_iplan[i])/rhoL0;
+      } else {
+        dfrhoL_ddrhoL(i,j) = 0;
+      }
+    }
+  }
+}
+
+
+

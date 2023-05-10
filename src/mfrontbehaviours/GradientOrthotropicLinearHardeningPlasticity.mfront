@@ -1,0 +1,147 @@
+@DSL       ImplicitGenericBehaviour; //DefaultGenericBehaviour; //Implicit;
+@Behaviour GradientOrthotropicLinearHardeningPlasticity;
+@Author    Jean-Michel Scherer;
+@Date 04/01/2022;
+@Description{
+  A scalar strain gradient plasticity model.
+}
+
+//@OrthotropicBehaviour<Pipe>;
+@Epsilon 1e-12;
+@Theta 1;
+
+@ModellingHypotheses {".+"};
+//@Algorithm NewtonRaphson_NumericalJacobian;
+
+// GRADS and FLUXES related to gradient plasticity
+@Gradient StrainStensor eto;
+eto.setEntryName("TotalStrain");
+@ThermodynamicForce StressStensor sigma;
+//@Flux StressStensor sigma;
+sigma.setGlossaryName("Stress");
+
+// Scalar version (gradient)
+@Gradient strain pX;
+pX.setEntryName("CumulatedPlasticStrain");
+@ThermodynamicForce stress S;
+S.setEntryName("MicroStress");
+@Gradient TVector gradpX;
+gradpX.setEntryName("CumulatedPlasticStrainGradient");
+@ThermodynamicForce TVector M;
+M.setEntryName("DoubleStress");
+
+// Tensor version (curl)
+/*
+//@Gradient Tensor Hp;
+//Hp.setEntryName("PlasticPartOfDisplacementGradient");
+@Gradient Tensor curlcurlHp;
+curlcurlHp.setEntryName("CurlofCurlofPlasticPartOfDisplacementGradient");
+@Flux Tensor s;
+s.setEntryName("MicroStress");
+@Gradient Tensor curlHp;
+curlHp.setEntryName("CurlOfPlasticPartOfDisplacementGradient");
+@Flux Tensor M;
+M.setEntryName("DoubleStress");
+*/
+
+@TangentOperatorBlocks{∂sigma∕∂Δeto, ∂S∕∂ΔpX, ∂M∕∂ΔgradpX};
+//@TangentOperatorBlocks{∂sigma∕∂Δeto, ∂S∕∂ΔcurlcurlHp, ∂M∕∂ΔcurlHp};
+
+
+@MaterialProperty stress H;
+H.setEntryName("H");
+@MaterialProperty stress s0;
+s0.setEntryName("s0");
+@MaterialProperty stress lambda;
+@MaterialProperty stress mu;
+
+@StateVariable StrainStensor eel;
+eel.setGlossaryName("ElasticStrain");
+//@StateVariable StrainStensor epl;
+//epl.setGlossaryName("PlasticStrain");
+@StateVariable strain p;
+p.setGlossaryName("EquivalentPlasticStrain");
+@PhysicalBounds p in [0:*[;
+
+@ExternalStateVariable stress lagrangeMultiplier;
+lagrangeMultiplier.setEntryName("LagrangeMultiplier");
+@AuxiliaryStateVariable StrainStensor epl;
+epl.setGlossaryName("PlasticStrain");
+
+@MaterialProperty real A;
+@MaterialProperty stress Hx;
+@MaterialProperty stress mux;
+@MaterialProperty real nn;
+@MaterialProperty stress K;
+
+//@MaterialProperty real l0;
+//@MaterialProperty real pi0;
+
+@ComputeThermodynamicForces {
+  sigma = lambda * trace(eel) * Stensor::Id() + 2 * mu * eel;
+  M = A*gradpX;
+  S = lagrangeMultiplier + mux * (pX - p);
+}
+
+@Integrator{
+  constexpr const auto eeps = 1.e-14;
+  const auto seps = 2 * mu * eeps;
+  //const auto eel_ = eel + theta * deel;
+  const auto p_ = p + theta * dp;
+  //sigma = lambda * trace(eel_) * Stensor::Id() + 2 * mu * eel_;
+  //M = A*gradpX;
+  //S = lagrangeMultiplier + mux * (pX - p_);
+
+  //M = pi0*power<2>(l0)*curlHp;
+  //s = -pi0*power<2>(l0)*curlcurlHp;
+  
+  const auto sigma_dev = deviator(sigma);
+  const auto seq = sigmaeq(sigma);
+  const auto n = 1.5 * sigma_dev / max(seq,seps);
+  const auto f = max( seq - (s0 + H*p_ + mux*p_ - lagrangeMultiplier) , 0.);
+  const auto vp = pow(f/K,nn);
+
+  // elasticity
+  feel = (deel + dp*n) - deto;
+  // viscoplasticity
+  fp = dp - dt*vp;
+
+/**/
+  // jacobian
+  const auto ∂vp∕∂seq = (nn / K) * pow(f/K,nn-1);
+  ∂feel∕∂Δeel = I₄ + 2 * mu * theta * dp * (Stensor4::M() - (n ⊗ n));
+  ∂feel∕∂Δp = n;
+  ∂fp∕∂Δeel = -2 * mu * theta * ∂vp∕∂seq * dt * n;
+  ∂fp∕∂Δp = 1. - dt * ∂vp∕∂seq * (H + mux) * theta;
+/**/
+
+/*
+  cout << "feel = " << feel << endl;
+  cout << "fp = " << fp << endl;
+  cout << "deel = " << deel << endl;
+  cout << "deto = " << deto << endl;
+  cout << "dp = " << dp << endl;
+  cout << " n = " << n << endl;
+  cout << "f = " << f << endl;
+  cout << "mux * p_ = " << mux*p_ << endl;
+*/
+}
+
+@TangentOperator {
+  static_cast<void>(smt);
+  const auto De = lambda ⋅ (I₂ ⊗ I₂) + 2 ⋅ mu ⋅ I₄;
+  ∂feel∕∂Δeto = -I₄;
+  const auto ∂Δeel∕∂Δeto = -iJ_eel_eel * ∂feel∕∂Δeto;
+  ∂sigma∕∂Δeto =  De ⋅ ∂Δeel∕∂Δeto;
+  ∂S∕∂ΔpX = mux + 1.e-12;
+  ∂M∕∂ΔgradpX = A *  tmatrix<N, N, real>::Id();
+}
+
+@UpdateAuxiliaryStateVariables{
+  constexpr const auto eeps = 1.e-14;
+  const auto seps = 2 * mu * eeps;
+  const auto sigma_dev = deviator(sigma);
+  const auto seq = sigmaeq(sigma);
+  const auto n = 1.5 * sigma_dev / max(seq,seps);
+  epl += dp * n; 
+}
