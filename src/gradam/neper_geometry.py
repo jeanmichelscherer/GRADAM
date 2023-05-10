@@ -36,7 +36,8 @@ class NeperGeometry:
     """ Construct a polycrystal geometry and associated tessellation, mesh, crystal orientations using Neper""" 
     def __init__(self,dimension=2,nbgrains=50,L=1.,W=1.,H=0.,cledge=.75,rcl=.75, \
                  id='0',neper_mesh='out',morpho='voronoi',orientation='uniform', \
-                 symmetry='cubic',oriformat='plain',oridescriptor='euler-bunge',extras=''):
+                 symmetry='cubic',oriformat='plain',oridescriptor='euler-bunge:active',extras='',\
+                 format_tess='tess'):
         self.dimension=dimension
         self.nbgrains=nbgrains
         self.L=L
@@ -54,8 +55,9 @@ class NeperGeometry:
         self.oriformat=oriformat
         self.oridescriptor=oridescriptor
         self.extras=extras
+        self.format_tess = format_tess
 
-    def make_microstructure_tessellation(self,format='tess'):
+    def make_microstructure_tessellation(self):
         if (self.morpho == 'voronoi'):
             cells    = " -n %s -morpho 'voronoi'" % self.nbgrains
         elif (("square" in self.morpho) or ("octa" in self.morpho) or ("aspratio" in self.morpho)):
@@ -63,10 +65,12 @@ class NeperGeometry:
             if (("diameq" in self.morpho)):
                 cells    = " -n 'from_morpho' -morpho %s" %  (self.morpho)       
         else:
-            cells    = " -n 'from_morpho' -morpho 'graingrowth(%s)' " % self.diameq
+            cells = self.morpho
+        #else:
+        #    cells    = " -n 'from_morpho' -morpho 'graingrowth(%s)' " % self.diameq
         out_name = " -o %s " % self.neper_mesh
         dim      = " -dim %s " % self.dimension
-        form     = " -format %s "  % format
+        form     = " -format %s "  % self.format_tess
         index    = " -id %s " % self.id
         domain   = " -domain '%s' " % self.shape
         command  = " neper -T " + cells + dim + form + index + domain + out_name
@@ -122,34 +126,34 @@ class NeperGeometry:
     def setup_geometry(self,make_tess=True,make_mesh=True,make_ori=True):
         if (self.dimension == 2):
             self.shape  = 'square(%s,%s)' % (self.L,self.W)
-            self.diameq = 2.*np.sqrt(self.L*self.W/np.pi/self.nbgrains)
+            #self.diameq = 2.*np.sqrt(self.L*self.W/np.pi/self.nbgrains)
         elif (self.dimension == 3):
             self.shape  = 'cube(%s,%s,%s)' % (self.L,self.W,self.H)
-            self.diameq = 2.*((3./4)*self.L*self.W*self.H/np.pi/self.nbgrains)**(1./3.)
+            #self.diameq = 2.*((3./4)*self.L*self.W*self.H/np.pi/self.nbgrains)**(1./3.)
 
         # make microstructure tessellation, mesh and orientations
         #if (not os.path.isfile(self.file_tess)):
         if (make_tess):
             # make tessellation
-            self.make_microstructure_tessellation(format='tess,geo')
+            self.make_microstructure_tessellation()
             # make mesh
+        if make_ori:
+            self.make_orientations(format='ori')
         if make_mesh:
             self.make_microstructure_mesh(format='msh')
             #self.make_microstructure_mesh(format='geof')
             # make a png picture of the mesh
             #self.make_mesh_picture()
             # make orientations
-        if make_ori:
-            self.make_orientations(format='ori')
- 
-        xdmf = MeshioMsh2Xdmf(self.dimension,self.neper_mesh,extras=self.extras)
-        xdmf.write_xdmf_mesh()
-        xdmf.read_xdmf_mesh()
-        self.msh = xdmf.msh_mesh
-        self.meshio_mesh = xdmf.meshio_mesh
-        self.mesh = xdmf.mesh
-        self.mesh_dim = xdmf.mesh_dim
-        self.mvc = xdmf.mvc
-        self.mf = xdmf.mf
-        self.dx = xdmf.dx
-        self.facets = xdmf.facets  
+
+            xdmf = MeshioMsh2Xdmf(self.dimension,self.neper_mesh,extras=self.extras)
+            xdmf.write_xdmf_mesh()
+            xdmf.read_xdmf_mesh()
+            self.msh = xdmf.msh_mesh
+            self.meshio_mesh = xdmf.meshio_mesh
+            self.mesh = xdmf.mesh
+            self.mesh_dim = xdmf.mesh_dim
+            self.mvc = xdmf.mvc
+            self.mf = xdmf.mf
+            self.dx = xdmf.dx
+            self.facets = xdmf.facets  
