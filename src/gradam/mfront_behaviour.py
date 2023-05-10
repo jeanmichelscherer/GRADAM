@@ -48,7 +48,7 @@ class MfrontBehaviour:
             if (isinstance(self.mat_prop[key],list)):
                 self.mat_prop[key] = make_property_per_domain(dim,mesh,mf,key,self.mat_prop[key])
             else:
-                self.mat_prop[key] = self.mat_prop[key] #["function"]
+                self.mat_prop[key] = self.mat_prop[key]
                 #self.mat_prop[key] = make_evolving_property_per_domain(dim,mesh,mf,self.mat_prop[key]["function"],key,self.mat_prop[key])
         self.mat_prop = dict(self.mat_prop, **mat_prop) # concatenation of both dicts
         
