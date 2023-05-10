@@ -476,7 +476,8 @@ class FractureProblem:
             self.niter += 1
             self.niter_tot += 1
             if self.rank == 0:
-                print("        Energy variation : %.5e"%(DeltaE))
+                print("        Energy (relative) variation : %.5e"%(DeltaE))
+                print("            Total energy : %.5e"%(Etot))
             
             # if self.save_intermediate == True:
             #     self.user_postprocess()
