@@ -205,5 +205,5 @@ damage.setGlossaryName("Damage");
   //const auto gd = (1 - damage) * (1 - damage) + kres;
   //Psi_s = (0.5 / gd) * (sig | eel);
   const auto gd = power<2>(1-(damage+ddamage)) + kres;
-  Psi_s = (0.5 / gd) * (sig | eel);
+  Psi_s = (0.5 / gd) * (convertCauchyStressToSecondPiolaKirchhoffStress(sig, Fe+tensor<3u,real>::Id()) | eel);
 }
