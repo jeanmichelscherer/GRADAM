@@ -41,7 +41,7 @@ parameters["form_compiler"]["representation"] = 'uflacs'
 ufl.algorithms.apply_derivatives.CONDITIONAL_WORKAROUND = True # allows to use a TrialFunction in conditional( ) for spectral_decomposition
 
 # residual stiffness
-kres = Constant(1e-6)
+kres = Constant(1e-9)
 
 def eps(v,dim):
     e = sym(grad(v))
@@ -171,12 +171,12 @@ class EXD:
                 #d1 = ((1-d[0])/(1+gamma*d[0]))**q*((1-d[1])/(1+gamma*d[1]))**r + kres
                 #d2 = ((1-d[1])/(1+gamma*d[1]))**q*((1-d[0])/(1+gamma*d[0]))**r + kres
                 #dd = ((1-d[0])/(1+gamma*d[0]))**p*((1-d[1])/(1+gamma*d[1]))**p + kres
-                #d1 = ((1-d[0])/(1+gamma*d[0]))**q + kres
-                #d2 = ((1-d[1])/(1+gamma*d[1]))**q + kres
-                #dd = ((1-d[0])/(1+gamma*d[0]))**p*((1-d[1])/(1+gamma*d[1]))**p + kres
-                d1 = ((1-d[0])/(1+gamma*d[0])) + kres
-                d2 = ((1-d[1])/(1+gamma*d[1])) + kres
-                dd = ((1-d[0])/(1+gamma*d[0]))*((1-d[1])/(1+gamma*d[1])) + kres
+                d1 = ((1-d[0])/(1+gamma*d[0]))**q + kres
+                d2 = ((1-d[1])/(1+gamma*d[1]))**q + kres
+                dd = ((1-d[0])/(1+gamma*d[0]))**p*((1-d[1])/(1+gamma*d[1]))**p + kres
+                #d1 = ((1-d[0])/(1+gamma*d[0])) + kres
+                #d2 = ((1-d[1])/(1+gamma*d[1])) + kres
+                #dd = ((1-d[0])/(1+gamma*d[0]))*((1-d[1])/(1+gamma*d[1])) + kres
                 #d1 = ((1-d[0])) + kres
                 #d2 = ((1-d[1])) + kres
                 #dd = ((1-d[0]))*((1-d[1])) + kres
