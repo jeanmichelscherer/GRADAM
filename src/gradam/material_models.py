@@ -84,11 +84,12 @@ class EXD:
             nu12,nu21,nu13,nu31,nu23,nu32=self.mp["nu12"],\
                 self.mp["nu21"],self.mp["nu13"],self.mp["nu31"],self.mp["nu23"],self.mp["nu32"]
             G12,G13,G23=self.mp["G12"],self.mp["G13"],self.mp["G23"]
-            self.moduli=list(zip(E1,E2,E3,nu12,nu21,nu13,nu31,nu23,nu32,G12,G13,G23)) 
-        Gc_ = self.mp["Gc"]
-        l0_ = self.mp["l0"]
-        dub_= self.mp["dub"]
-        self.Gc,self.l0,self.dub = make_fracture_properties_per_domain(self.dim,self.mesh,self.mf,self.damage_dim,Gc_,l0_,dub_)
+            self.moduli=list(zip(E1,E2,E3,nu12,nu21,nu13,nu31,nu23,nu32,G12,G13,G23))
+        if (self.damage_dim>0):
+            Gc_ = self.mp["Gc"]
+            l0_ = self.mp["l0"]
+            dub_= self.mp["dub"]
+            self.Gc,self.l0,self.dub = make_fracture_properties_per_domain(self.dim,self.mesh,self.mf,self.damage_dim,Gc_,l0_,dub_)
         #if ("B_crystal" in self.mp): 
         #    self.B_crystal = self.mp["B_crystal"]
         #el
@@ -197,7 +198,43 @@ class EXD:
             return dot(self.R.T,dot(voigt2stress(dot(degraded_stiffness,self.eps_crystal_pos)),self.R)) +\
                    self.sigma0(self.eps_crystal_neg)
 
-        if (self.damage_dim==1):
+        if (self.dim==3 and self.damage_dim==3 and self.anisotropic_degradation and self.damage_tensor[0]):
+            q = self.damage_tensor[1]
+            p = self.damage_tensor[2]
+            degrad_type = self.damage_tensor[3]
+
+            if (degrad_type == 'Lorentz'):            
+                gamma = self.damage_tensor[4]
+                r = self.damage_tensor[5]
+                d1 = ((1-d[0])/(1+gamma*d[0]))**q + kres
+                d2 = ((1-d[1])/(1+gamma*d[1]))**q + kres
+                d3 = ((1-d[2])/(1+gamma*d[2]))**q + kres
+                dd = ((1-d[0])/(1+gamma*d[0]))**p*((1-d[1])/(1+gamma*d[1]))**p*((1-d[2])/(1+gamma*d[2]))**p + kres
+            elif (degrad_type=='tan'):
+                gamma = self.damage_tensor[4]
+                d1 = ((0.5/tan(gamma/2.))*tan(-gamma*(d[0]-0.5)) + 0.5)**q
+                d2 = ((0.5/tan(gamma/2.))*tan(-gamma*(d[1]-0.5)) + 0.5)**q
+                d3 = ((0.5/tan(gamma/2.))*tan(-gamma*(d[2]-0.5)) + 0.5)**q
+                dd = ((0.5/tan(gamma/2.))*tan(-gamma*(d[0]-0.5)) + 0.5)**p*\
+                     ((0.5/tan(gamma/2.))*tan(-gamma*(d[1]-0.5)) + 0.5)**p*\
+                     ((0.5/tan(gamma/2.))*tan(-gamma*(d[2]-0.5)) + 0.5)**p
+            else:
+                d1 = (1-d[0])**q + kres
+                d2 = (1-d[1])**q + kres
+                d3 = (1-d[2])**q + kres
+                dd = (1-d[0])**p*(1-d[1])**p*(1-d[2])**p + kres
+
+            iD0 = as_tensor([[d1,0,0,0,0,0],[0,d2,0,0,0,0],[0,0,d3,0,0,0],\
+                             [0,0,0,dd,0,0],[0,0,0,0,dd,0],[0,0,0,0,0,dd]])
+            degraded_stiffness = dot(iD0,dot(self.C,iD0))
+
+            return dot(self.R.T,dot(voigt2stress(dot(degraded_stiffness,self.eps_crystal_pos)),self.R)) +\
+                   self.sigma0(self.eps_crystal_neg)
+
+        if (self.damage_dim==0):
+            return self.sigma0(self.eps_crystal_pos) + self.sigma0(self.eps_crystal_neg)
+            #return self.sigma0(self.eps_crystal_neg)
+        elif (self.damage_dim==1):
             return ((1.-d)**2 + kres)*self.sigma0(self.eps_crystal_pos) + self.sigma0(self.eps_crystal_neg)
             #return self.sigma0(self.eps_crystal_neg)
         else:
@@ -355,28 +392,31 @@ class EXD:
                                                   [self.B_sample[n][1,0], self.B_sample[n][1,1]]])
                 
     def fracture_energy_density(self,d,d_prev_iter):
-        if self.damage_model == "AT1":
-            cw = Constant(8/3.)
-            w = lambda d: d
-        elif self.damage_model == "AT2":
-            cw = Constant(2.)
-            w = lambda d: d**2
-        self.make_B_sample(d,d_prev_iter)
-        if (self.damage_dim==1):
-#            self.B_sample = dot(self.R.T,dot(self.B_crystal,self.R))
-#            if (self.dim==2):
-#                self.B_sample = as_tensor([[self.B_sample[0,0], self.B_sample[0,1]],
-#                                           [self.B_sample[1,0], self.B_sample[1,1]]])
-            return [self.Gc/cw*(w(d)/self.l0+self.l0*dot(dot(self.B_sample, grad(d)),grad(d)))]
+        if (self.damage_dim==0):
+            return [0.]
         else:
-            Efrac = []
-#            self.B_sample = []
-            for n in range(self.damage_dim):
-#                self.B_sample.append(dot(self.R.T,dot(self.B_crystal[n],self.R)))
-#                if (self.B_crystal == as_tensor(np.eye(3))):
-#                    self.B_sample = as_tensor(np.eye(3))
-#                if (self.dim==2):
-#                    self.B_sample[n] = as_tensor([[self.B_sample[n][0,0], self.B_sample[n][0,1]],
-#                                                  [self.B_sample[n][1,0], self.B_sample[n][1,1]]])
-                Efrac.append( self.Gc[n]/cw*(w(d[n])/self.l0[n]+self.l0[n]*dot(dot(self.B_sample[n], grad(d[n])),grad(d[n]))) )
-            return Efrac
+            if self.damage_model == "AT1":
+                cw = Constant(8/3.)
+                w = lambda d: d
+            elif self.damage_model == "AT2":
+                cw = Constant(2.)
+                w = lambda d: d**2
+            self.make_B_sample(d,d_prev_iter)
+            if (self.damage_dim==1):
+    #            self.B_sample = dot(self.R.T,dot(self.B_crystal,self.R))
+    #            if (self.dim==2):
+    #                self.B_sample = as_tensor([[self.B_sample[0,0], self.B_sample[0,1]],
+    #                                           [self.B_sample[1,0], self.B_sample[1,1]]])
+                return [self.Gc/cw*(w(d)/self.l0+self.l0*dot(dot(self.B_sample, grad(d)),grad(d)))]
+            else:
+                Efrac = []
+    #            self.B_sample = []
+                for n in range(self.damage_dim):
+    #                self.B_sample.append(dot(self.R.T,dot(self.B_crystal[n],self.R)))
+    #                if (self.B_crystal == as_tensor(np.eye(3))):
+    #                    self.B_sample = as_tensor(np.eye(3))
+    #                if (self.dim==2):
+    #                    self.B_sample[n] = as_tensor([[self.B_sample[n][0,0], self.B_sample[n][0,1]],
+    #                                                  [self.B_sample[n][1,0], self.B_sample[n][1,1]]])
+                    Efrac.append( self.Gc[n]/cw*(w(d[n])/self.l0[n]+self.l0[n]*dot(dot(self.B_sample[n], grad(d[n])),grad(d[n]))) )
+                return Efrac
