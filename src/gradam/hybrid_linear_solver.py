@@ -12,7 +12,7 @@ from time import time
 
 class HybridLinearSolver:
     def __init__(self, a, L, u, p=None, bcs=None, parameters={"iteration_switch": 5, "user_switch": True},
-                 direct_solver={"solver": "mumps", "type": "lu", "blr": True},
+                 direct_solver={"solver": "mumps", "type": "ksp", "blr": True},
                  iterative_solver={"solver": "cg"}, log=True, timings=False, null_space_basis=None):
         self.a = a
         self.L = L
