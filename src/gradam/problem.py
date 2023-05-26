@@ -521,8 +521,8 @@ class FractureProblem:
         tic_export = time()
         self.results.write(self.d,t)
         #self.results.write(self.d_eq_fiss,t)
-        if ((not self.write_checkpoint_count % 10) and self.save_checkpoints):
-            self.results.write_checkpoint(self.d,"Damage",t,append=True)
+        if ((not self.write_checkpoint_count % 1) and self.save_checkpoints):
+            self.checkpoints.write_checkpoint(self.d,"Damage",t,append=True)
             self.write_checkpoint_count = 1
         self.write_checkpoint_count += 1
         self.runtime_export += time() - tic_export
@@ -607,8 +607,9 @@ class FractureProblem:
         #self.stiffness.assign(local_project(self.mat.C,self.Vstiffness))
         #self.results.write(self.stiffness,t)
 
-        if ((not self.write_checkpoint_count % 10) and self.save_checkpoints):
+        if ((not self.write_checkpoint_count % 1) and self.save_checkpoints):
             self.checkpoints.write_checkpoint(self.u,self.u.name(),t,append=True)
+            self.checkpoints.write_checkpoint(sigma,sigma.name(),t,append=True)
         self.runtime_export += time() - tic_export
                    
     def solve(self):
@@ -798,7 +799,7 @@ class FractureProblem:
             else:
                 self.Vd = VectorFunctionSpace(self.mesh, "CG", self.d_degree, dim=self.mat.damage_dim)
             self.V0 = FunctionSpace(self.mesh, "DG", 0)    
-            self.Vsig = TensorFunctionSpace(self.mesh, "CG", 1, shape=(3,3))
+            self.Vsig = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3))
             self.VV = VectorFunctionSpace(self.mesh, "DG", 0, dim=3)
             self.Vr = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3))
             #self.Vstiffness = TensorFunctionSpace(self.mesh, "CG", 1, shape=(6,6))
@@ -945,7 +946,7 @@ class FractureProblem:
             print(' ##################################################################\n',\
                    '##########                 gradam-%s                 ##########\n' % version,\
                    '##########            Jean-Michel Scherer (C)           ##########\n',\
-                   '##########              scherer@caltech.edu             ##########\n',\
+                   '##########    jean-michel.scherer@minesparis.psl.eu     ##########\n',\
                    '##########    Installed on: %s    ##########\n' % date,\
                    '##################################################################\n')
         
