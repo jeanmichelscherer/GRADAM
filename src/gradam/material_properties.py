@@ -77,8 +77,6 @@ def make_evolving_property_per_domain(dim,
     MP_ = MP(mf,mf_local)
     mp = Function(V0, name=mat_prop_key)
     mp.interpolate(MP_)
-    file = File("/home/scherer/Documents/Projects/0002_Postdoc2_PhaseFieldFractureAssessment/CrystalPlasticityFracture/Tests/Tension/CottrellNucleation/LayeredSingleCrystal/H.pvd")
-    file << mp
     return mp
 
 def make_cubic_elasticity_stiffness_tensor(dim,
@@ -289,6 +287,76 @@ def make_orthotropic_elasticity_stiffness_tensor(dim,
                     [0.,    0.,    0.,    0.,    0.,    y1212]])
     return C, E1, E2, E3, nu12, nu21, nu13, nu31, nu23, nu32, G12, G13, G23 
 
+def make_fracture_properties_static_phase_field(dim,
+                                               mesh,
+                                               mf,
+                                               damage_dim,
+                                               Gcbulk_,
+                                               Gcboundary_,
+                                               l0_,
+                                               dub_,
+                                               static_phase_field_):
+          
+    # interpolate fracture properties
+    class GC(UserExpression):
+        def __init__(self, mf, **kwargs):
+            super().__init__(**kwargs)
+            self.mf = mf
+        def eval_cell(self, values, x, cell):
+            k = self.mf[cell.index]-1
+            for i in range(damage_dim):
+                #print(i,k)
+                values[i] = (1.-static_phase_field_(x))*Gcbulk_[k][i] + static_phase_field_(x)*Gcboundary_[k][i]
+        def value_shape(self):
+            if (damage_dim==1):
+                return ()
+            else:
+                return (damage_dim,) 
+    class L0(UserExpression):
+        def __init__(self, mf, **kwargs):
+            super().__init__(**kwargs)
+            self.mf = mf
+        def eval_cell(self, values, x, cell):
+            k = self.mf[cell.index]-1
+            for i in range(damage_dim):
+                values[i] = l0_[k][i]
+        def value_shape(self):
+            if (damage_dim==1):
+                return ()
+            else:
+                return (damage_dim,)
+    # damage upper bound (=1 if damageable else =0)
+    class DUB(UserExpression): 
+        def __init__(self, mf, **kwargs):
+            super().__init__(**kwargs)
+            self.mf = mf
+        def eval_cell(self, values, x, cell):
+            k = self.mf[cell.index]-1
+            for i in range(damage_dim):
+                values[i] = dub_[k][i]
+        def value_shape(self):
+            if (damage_dim==1):
+                return ()
+            else:
+                return (damage_dim,)
+    
+    
+    if (damage_dim == 1):        
+        V0 = FunctionSpace(mesh, "DG", 1)
+        Vd = FunctionSpace(mesh, "CG", 1)
+    else:
+        #V0 = VectorFunctionSpace(mesh, "DG", damage_dim)
+        V0 = VectorFunctionSpace(mesh, "DG", 1, dim=damage_dim)
+        #Vd = VectorFunctionSpace(mesh, "CG", damage_dim)
+        Vd = VectorFunctionSpace(mesh, "CG", 1, dim=damage_dim)
+    GC_, L0_, DUB_ = GC(mf), L0(mf), DUB(mf)
+    Gc, l0, dub = Function(V0, name='Gc'), Function(V0, name='l0'), Function(Vd, name='Damage upper bound')
+    Gc.interpolate(GC_)
+    l0.interpolate(L0_)
+    dub.interpolate(DUB_)
+
+    return Gc, l0, dub
+
 def make_fracture_properties_per_domain(dim,
                                         mesh,
                                         mf,
@@ -356,7 +424,6 @@ def make_fracture_properties_per_domain(dim,
     dub.interpolate(DUB_)
 
     return Gc, l0, dub
-
 
 def transfer_function(function, function_space):
     temp = Function(function_space, name=function.name())
