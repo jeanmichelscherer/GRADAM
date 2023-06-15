@@ -41,7 +41,7 @@ parameters["form_compiler"]["representation"] = 'uflacs'
 ufl.algorithms.apply_derivatives.CONDITIONAL_WORKAROUND = True # allows to use a TrialFunction in conditional( ) for spectral_decomposition
 
 # residual stiffness
-kres = Constant(1e-9)
+kres = Constant(1e-4) # below 1e-5 fails when using anisotropic degradation due to zero pivot during LU factorization (petsc error code 71)
 
 def eps(v,dim):
     e = sym(grad(v))
