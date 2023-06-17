@@ -86,10 +86,18 @@ class EXD:
             G12,G13,G23=self.mp["G12"],self.mp["G13"],self.mp["G23"]
             self.moduli=list(zip(E1,E2,E3,nu12,nu21,nu13,nu31,nu23,nu32,G12,G13,G23))
         if (self.damage_dim>0):
-            Gc_ = self.mp["Gc"]
-            l0_ = self.mp["l0"]
-            dub_= self.mp["dub"]
-            self.Gc,self.l0,self.dub = make_fracture_properties_per_domain(self.dim,self.mesh,self.mf,self.damage_dim,Gc_,l0_,dub_)
+            if (not self.mp["static_phase_field"]):
+                Gc_ = self.mp["Gc"]
+                l0_ = self.mp["l0"]
+                dub_= self.mp["dub"]
+                self.Gc,self.l0,self.dub = make_fracture_properties_per_domain(self.dim,self.mesh,self.mf,self.damage_dim,Gc_,l0_,dub_)
+            else:
+                Gcbulk_ = self.mp["Gcbulk"]
+                Gcboundary_ = self.mp["Gcboundary"]
+                l0_ = self.mp["l0"]
+                dub_= self.mp["dub"]
+                static_phase_field_ = self.mp["static_phase_field"]
+                self.Gc,self.l0,self.dub = make_fracture_properties_static_phase_field(self.dim,self.mesh,self.mf,self.damage_dim,Gcbulk_,Gcboundary_,l0_,dub_,static_phase_field_)
         #if ("B_crystal" in self.mp): 
         #    self.B_crystal = self.mp["B_crystal"]
         #el

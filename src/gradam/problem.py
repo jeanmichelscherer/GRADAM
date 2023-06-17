@@ -787,6 +787,12 @@ class FractureProblem:
                     Jcontour().mark(mfJ, Jmarker)
                     self.dsJ[i] = dsj(Jmarker)           
             self.ds = Measure("ds", subdomain_data=self.facets)
+
+            if self.mat.mp["static_phase_field"]:
+                Vspf = FunctionSpace(self.mesh, 'DG', 1)
+                tmp = self.mat.mp["static_phase_field"]
+                self.mat.mp["static_phase_field"] = Function(Vspf,name="grain boundary") 
+                LagrangeInterpolator.interpolate(self.mat.mp["static_phase_field"],tmp)
             self.mat = EXD(self.mat.dim,self.mat.damage_dim,self.mat.mp,\
                            self.mesh,self.mf,self.mat.geometry,behaviour=self.mat.behaviour,mfront_behaviour=self.mat.mfront_behaviour,\
                            damage_model=self.mat.damage_model,anisotropic_elasticity=self.mat.anisotropic_elasticity,\
