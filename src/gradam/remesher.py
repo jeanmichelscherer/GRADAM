@@ -37,7 +37,7 @@ from .hybrid_linear_solver import *
 
 class Remesher:
     def __init__(self,mesh_path='',mesh_file='',sol_file='',beta=None,delta=None,number_of_nodes_index=None,\
-                 sol_min=None,sol_max=None,save_files=False):
+                 sol_min=None,sol_max=None,save_files=False,np=1):
         self.mesh_path = mesh_path
         self.mesh_file = mesh_file
         self.sol_file = sol_file
@@ -47,6 +47,7 @@ class Remesher:
         self.sol_min = sol_min
         self.sol_max = sol_max
         self.save_files = save_files
+        self.np = np
 
     def diffusion(self,v,V):
         dv = TrialFunction(V)
@@ -130,10 +131,12 @@ class Remesher:
             self.convert_msh2mesh(dim,remeshing_index-1)      
         oldmesh = self.mesh_file+"_remeshed_%s" % (remeshing_index-1)
         newmesh = self.mesh_file+"_remeshed_%s" % (remeshing_index) #+1)
-        medit = ""
         if (dim==2):
             medit = "-3dMedit %s" % dim
-        command = "mmg%sd_O3 %s %s" % (dim,medit,self.mesh_path+oldmesh+'.mesh')
+            command = "mmg%sd_O3 %s %s" % (dim,medit,self.mesh_path+oldmesh+'.mesh')
+        else:
+            medit = ""
+            command = "~/anaconda3/envs/fenics/bin/mpirun -n %s parmmg_O3 %s %s" % (self.np,medit,self.mesh_path+oldmesh+'.mesh')
         print("\nCalling MMG to perform remeshing: %s \n" % command )
         os.system(command)
         #subprocess.call(["mmg%sd_O3" % dim, "-3dMedit", "%s" % dim,  "%s" % (mesh_path+oldmesh+'.mesh')] )

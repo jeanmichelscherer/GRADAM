@@ -86,7 +86,7 @@ class EXD:
             G12,G13,G23=self.mp["G12"],self.mp["G13"],self.mp["G23"]
             self.moduli=list(zip(E1,E2,E3,nu12,nu21,nu13,nu31,nu23,nu32,G12,G13,G23))
         if (self.damage_dim>0):
-            if (not self.mp["static_phase_field"]):
+            if (not "static_phase_field" in self.mp):
                 Gc_ = self.mp["Gc"]
                 l0_ = self.mp["l0"]
                 dub_= self.mp["dub"]
