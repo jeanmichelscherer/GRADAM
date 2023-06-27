@@ -788,7 +788,7 @@ class FractureProblem:
                     self.dsJ[i] = dsj(Jmarker)           
             self.ds = Measure("ds", subdomain_data=self.facets)
 
-            if self.mat.mp["static_phase_field"]:
+            if "static_phase_field" in self.mat.mp:
                 Vspf = FunctionSpace(self.mesh, 'DG', 1)
                 tmp = self.mat.mp["static_phase_field"]
                 self.mat.mp["static_phase_field"] = Function(Vspf,name="grain boundary") 
