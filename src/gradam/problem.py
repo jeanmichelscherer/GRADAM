@@ -585,6 +585,8 @@ class FractureProblem:
         self.results.write(self.mat.phi1,t)
         self.results.write(self.mat.Phi,t)
         self.results.write(self.mat.phi2,t)
+        if "static_phase_field" in self.mat.mp:
+            self.results.write(self.mat.mp["static_phase_field"],t)
         
         if (not self.mat.behaviour=='linear_elasticity'):
             for var in self.mb.get_internal_state_variable_names():
@@ -790,7 +792,7 @@ class FractureProblem:
 
             if "static_phase_field" in self.mat.mp:
                 Vspf = FunctionSpace(self.mesh, 'DG', 1)
-                tmp = self.mat.mp["static_phase_field"]
+                tmp = self.mat.mp["static_phase_field_0"]
                 self.mat.mp["static_phase_field"] = Function(Vspf,name="grain boundary") 
                 LagrangeInterpolator.interpolate(self.mat.mp["static_phase_field"],tmp)
             self.mat = EXD(self.mat.dim,self.mat.damage_dim,self.mat.mp,\
