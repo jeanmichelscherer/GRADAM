@@ -195,7 +195,7 @@ class Remesher:
                 os.system('touch %s' % self.mesh_path+'remeshing_state')
                 #np.savetxt(self.mesh_path+'remeshing_state.txt',[1])
             else:
-                command = "%s -n %s parmmg_O3 %s %s" % (self.mpirun,self.nprocs,self.nprocs,medit,self.mesh_path+oldmesh+'.mesh')
+                command = "%s -n %s parmmg_O3 %s" % (self.mpirun,self.nprocs,self.mesh_path+oldmesh+'.mesh')
         print("\nCalling MMG to perform remeshing: %s \n" % command )
         os.system(command)
         #subprocess.call(["mmg%sd_O3" % dim, "-3dMedit", "%s" % dim,  "%s" % (mesh_path+oldmesh+'.mesh')] )
