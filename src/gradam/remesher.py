@@ -33,11 +33,14 @@ import meshio
 from mpi4py import MPI as pyMPI
 import matplotlib.pyplot as plt
 from .hybrid_linear_solver import *
+from time import sleep
+
 # import subprocess
 
 class Remesher:
     def __init__(self,mesh_path='',mesh_file='',sol_file='',beta=None,delta=None,number_of_nodes_index=None,\
-                 sol_min=None,sol_max=None,save_files=False,metric_type="damage",np=1):
+                 sol_min=None,sol_max=None,save_files=False,metric_type="damage",slurm_job=False,nnodes=1,
+                 nprocs=1,mpirun='/home/jmscherer/anaconda3/envs/fenics/bin/mpirun'):
         self.mesh_path = mesh_path
         self.mesh_file = mesh_file
         self.sol_file = sol_file
@@ -48,7 +51,10 @@ class Remesher:
         self.sol_max = sol_max
         self.save_files = save_files
         self.metric_type = metric_type
-        self.np = np
+        self.slurm_job = slurm_job
+        self.nnodes = nnodes
+        self.nprocs = nprocs
+        self.mpirun = mpirun
 
     def diffusion(self,v,V):
         dv = TrialFunction(V)
@@ -183,10 +189,23 @@ class Remesher:
             command = "mmg%sd_O3 %s %s" % (dim,medit,self.mesh_path+oldmesh+'.mesh')
         else:
             medit = ""
-            command = "~/anaconda3/envs/fenics/bin/mpirun -n %s parmmg_O3 %s %s" % (self.np,medit,self.mesh_path+oldmesh+'.mesh')
+            if self.slurm_job:
+                slurm = self.create_slurm_script(remeshing_index,oldmesh)
+                command = "sbatch %s" % slurm
+                os.system('touch %s' % self.mesh_path+'remeshing_state')
+                #np.savetxt(self.mesh_path+'remeshing_state.txt',[1])
+            else:
+                command = "%s -n %s parmmg_O3 %s %s" % (self.mpirun,self.nprocs,self.nprocs,medit,self.mesh_path+oldmesh+'.mesh')
         print("\nCalling MMG to perform remeshing: %s \n" % command )
         os.system(command)
         #subprocess.call(["mmg%sd_O3" % dim, "-3dMedit", "%s" % dim,  "%s" % (mesh_path+oldmesh+'.mesh')] )
+        tt = 0
+	
+        #while np.loadtxt(self.mesh_path+'remeshing_state.txt')==1: #not os.path.exists(self.mesh_path+oldmesh+'.o.mesh'):
+        while os.path.isfile(self.mesh_path+'remeshing_state'): #not os.path.exists(self.mesh_path+oldmesh+'.o.mesh'):
+            sleep(1)
+            tt += 1
+            print("\n Waiting for remeshing to finish: %s s \n" % tt)
         f = open(self.mesh_path+geo_tmpl+'.geo.tmpl','r')
         lines = f.readlines()
         f.close()
@@ -208,6 +227,29 @@ class Remesher:
         if (not self.save_files):
             self.cleanup_files(remeshing_index-1)
 
+    def create_slurm_script(self,remeshing_index,oldmesh):
+        with open(self.mesh_path+'remesh.slurm','w') as f:
+            slurm = [
+                "#!/bin/bash\n",
+                "#SBATCH --partition=hpe-xeon #all-nodes\n",
+                "#SBATCH --ntasks=%s               # Number of MPI tasks (i.e. processes)\n" % (int(self.nprocs*self.nnodes)),
+                "#SBATCH --cpus-per-task=1         # Number of cores per MPI task\n",
+                "#SBATCH --nodes=%s                 # Maximum number of nodes to be allocated\n" % self.nnodes,
+                "#SBATCH --ntasks-per-node=%s         # Maximum number of tasks on each node\n" % self.nprocs,
+                "##SBATCH --exclude=node002         # Nodes to exclude for allocation\n",
+                "\n",
+                "#SBATCH --mem 250Go              # Memory needed => TO ADAPT FOR YOUR COMPUTATION\n",
+                "#SBATCH --job-name=poly3D        # Your job name which appear in the squeue\n",
+                "#SBATCH -o %sremesh_%s_%%j.o\n" % (self.mesh_path,remeshing_index),
+                "#SBATCH -e %sremesh_%s_%%j.e\n" % (self.mesh_path,remeshing_index),
+                "\n",
+                "/home/users02/jmscherer/anaconda3/envs/fenicsproject/bin/mpirun -n $SLURM_NTASKS parmmg_O3 %s\n" % (self.mesh_path+oldmesh+'.mesh'),
+                "rm %s\n" % (self.mesh_path+'remeshing_state'),
+                #"python -c \"import numpy as np; np.savetxt('%s'+'remeshing_state.txt',[0])\"\n" % (self.mesh_path)
+            ]
+            f.writelines(slurm)
+        return self.mesh_path+'remesh.slurm'
+
     def convert_msh2mesh(self,dim,remeshing_index):
         geo = self.mesh_path+'convert_0.geo'
         c = open(geo,'w')
@@ -220,6 +262,8 @@ class Remesher:
         files = [f for f in os.listdir(self.mesh_path) if '_'+str(remeshing_index)+'.' in f]
         if (remeshing_index==0):
             files.remove(self.mesh_file+'_remeshed_0.msh')
+            if self.mesh_file+'_remeshed_0.ori' in files:
+                files.remove(self.mesh_file+'_remeshed_0.ori')
         for f in files:
             os.system("rm %s%s" % (self.mesh_path,f))
         #os.system("rm %s*_%s.*" % (self.mesh_path,remeshing_index))
