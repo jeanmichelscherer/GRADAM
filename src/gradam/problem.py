@@ -172,6 +172,9 @@ class FractureProblem:
         self.Vsig = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3)) #self.u_degree, shape=(3,3))
         self.VV = VectorFunctionSpace(self.mesh, "DG", 0, dim=3)
         self.Vr = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3))
+        #if self.remesher.metric_type=="elastic energy density":
+        #    self.Vmetric = FunctionSpace(self.mesh, "CG", 1)
+        #elif self.remesher.metric_type=="damage":
         self.Vmetric = FunctionSpace(self.mesh, "CG", self.d_degree)  
         
         self.u_ = TestFunction(self.Vu)
@@ -750,7 +753,18 @@ class FractureProblem:
             #self.d_var_smooth = filter_function(self.d,self.d_var,self.Vd,self.gaussian_filter_sigma,\
             #                                    self.mat.damage_dim,self.dim)
             #self.metric_field = np.array(self.d_var_smooth.compute_vertex_values())
-            self.metric = self.remesher.metric(self.metric,self.mat.damage_dim,self.d,self.Vd,self.remeshing_index)
+            if self.remesher.metric_type=="elastic energy density":
+                self.Vmetric = FunctionSpace(self.mesh, "CG", 1)
+                self.w_el = Function(self.Vmetric,name="v:metric")
+                self.w_el.assign(local_project(.5*inner(self.sig,eps(self.u,self.dim)),self.Vmetric))
+                self.metric = self.remesher.metric_elastic_energy_density(self.metric,self.w_el,self.remeshing_index) #,self.Vmetric)
+            elif self.remesher.metric_type=="damage":
+                self.metric = self.remesher.metric_damage(self.metric,self.mat.damage_dim,self.d,self.Vd,self.remeshing_index)
+            elif self.remesher.metric_type=="damage and elastic energy density":
+                self.Vmetric = FunctionSpace(self.mesh, "CG", 1)
+                self.w_el = Function(self.Vmetric,name="v:metric")
+                self.w_el.assign(local_project(.5*inner(self.sig,eps(self.u,self.dim)),self.Vmetric))
+                self.metric = self.remesher.metric_damage_and_elastic_energy_density(self.metric,self.mat.damage_dim,self.d,self.Vd,self.w_el,self.remeshing_index)       
             if (self.rank == 0):
                 metric = meshio.xdmf.read(self.remesher.mesh_path+"metric_%s.xdmf" % self.remeshing_index).point_data["v:metric"][:,0]
                 self.num_vertices = metric.size

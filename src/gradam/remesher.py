@@ -37,7 +37,7 @@ from .hybrid_linear_solver import *
 
 class Remesher:
     def __init__(self,mesh_path='',mesh_file='',sol_file='',beta=None,delta=None,number_of_nodes_index=None,\
-                 sol_min=None,sol_max=None,save_files=False,np=1):
+                 sol_min=None,sol_max=None,save_files=False,metric_type="damage",np=1):
         self.mesh_path = mesh_path
         self.mesh_file = mesh_file
         self.sol_file = sol_file
@@ -47,6 +47,7 @@ class Remesher:
         self.sol_min = sol_min
         self.sol_max = sol_max
         self.save_files = save_files
+        self.metric_type = metric_type
         self.np = np
 
     def diffusion(self,v,V):
@@ -62,7 +63,7 @@ class Remesher:
         solver_metric.solve()
         return u
     
-    def metric(self,previous_metric,damage_dim,d,Vd,remeshing_index):       
+    def metric_damage(self,previous_metric,damage_dim,d,Vd,remeshing_index):       
         VV = Vd
         if (damage_dim>1):
              VV = Vd.sub(0).collapse()
@@ -85,7 +86,53 @@ class Remesher:
         xdmf.write(metric_field)
         xdmf.close()
         return metric_field
-        
+    
+    def metric_elastic_energy_density(self,previous_metric,stored_energy_density,remeshing_index): #,Vmetric):
+        #metric_field = Function(Vmetric,name="v:metric")
+        #metric_field.vector()[:] = stored_energy.vector()[:]
+        metric_field = stored_energy_density
+        mini, maxi = min(metric_field.vector()), max(metric_field.vector())
+        pyMPI.COMM_WORLD.barrier()
+        mini, maxi = pyMPI.COMM_WORLD.allreduce(mini, op=pyMPI.MIN), pyMPI.COMM_WORLD.allreduce(maxi, op=pyMPI.MAX)
+        metric_field.vector()[:] = (metric_field.vector()[:] - mini)/(max(maxi - mini,1.e-6))
+        metric_field.vector()[:] = np.maximum(metric_field.vector()[:], previous_metric.vector()[:]) #/!\ prevents mesh to coarsen
+        xdmf = XDMFFile(pyMPI.COMM_WORLD, self.mesh_path+"metric_%s.xdmf" % remeshing_index)
+        xdmf.write(metric_field)
+        xdmf.close()
+        return metric_field
+
+    def metric_damage_and_elastic_energy_density(self,previous_metric,damage_dim,d,Vd,stored_energy_density,remeshing_index):       
+        VV = Vd
+        if (damage_dim>1):
+             VV = Vd.sub(0).collapse()
+        diffuse = Function(VV,name="Diffused damage")
+        metric_field = Function(VV,name="v:metric")
+        metric_field.vector()[:] = diffuse.vector()[:]
+        if (damage_dim>1):
+            for k in range(damage_dim):
+                diffuse = self.diffusion(d.sub(k),VV)
+                metric_field.vector()[:] = np.maximum(metric_field.vector()[:], diffuse.vector()[:]) #element wise maximum #or # += diffuse.compute_vertex_values() #sum
+        else: 
+            diffuse = self.diffusion(d,VV)
+            metric_field.vector()[:] = np.maximum(metric_field.vector()[:], diffuse.vector()[:])
+        mini, maxi = min(metric_field.vector()), max(metric_field.vector())
+        pyMPI.COMM_WORLD.barrier()
+        mini, maxi = pyMPI.COMM_WORLD.allreduce(mini, op=pyMPI.MIN), pyMPI.COMM_WORLD.allreduce(maxi, op=pyMPI.MAX)
+        metric_field.vector()[:] = (metric_field.vector()[:] - mini)/(max(maxi - mini,1.e-6))
+        metric_field.vector()[:] = np.maximum(metric_field.vector()[:], previous_metric.vector()[:]) #/!\ prevents mesh to coarsen
+
+        # refine also where the stored energy density is large
+        mini, maxi = min(stored_energy_density.vector()), max(stored_energy_density.vector())
+        pyMPI.COMM_WORLD.barrier()
+        mini, maxi = pyMPI.COMM_WORLD.allreduce(mini, op=pyMPI.MIN), pyMPI.COMM_WORLD.allreduce(maxi, op=pyMPI.MAX)
+        stored_energy_density.vector()[:] = (stored_energy_density.vector()[:] - mini)/(max(maxi - mini,1.e-6))
+        metric_field.vector()[:] = np.maximum(stored_energy_density.vector()[:], metric_field.vector()[:]) #/!\ prevents mesh to coarsen
+
+        xdmf = XDMFFile(pyMPI.COMM_WORLD, self.mesh_path+"metric_%s.xdmf" % remeshing_index)
+        xdmf.write(metric_field)
+        xdmf.close()
+        return metric_field
+
     def write_uniform_sol(self,uniform_metric):
         s = open(self.mesh_path+self.mesh_file+'_remeshed_0.sol','w')
         f = open(self.mesh_path+self.mesh_file+'.msh', "r")
