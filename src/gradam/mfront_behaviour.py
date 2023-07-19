@@ -36,12 +36,13 @@ import mgis.fenics as mf
 
 class MfrontBehaviour:
     """ Non-linear material behaviour based on Mfront implementations and the MGIS.fenics interface """ 
-    def __init__(self,behaviour,mfront_library='./src/libBehaviour.so',hypothesis='3d',mp={},quadrature_degree=2):
+    def __init__(self,behaviour,mfront_library='./src/libBehaviour.so',hypothesis='3d',mp={},quadrature_degree=2,save_variables=()):
         self.behaviour = behaviour
         self.mfront_library = mfront_library
         self.hypothesis = hypothesis
         self.mat_prop = mp
         self.quadrature_degree = quadrature_degree
+        self.save_variables = save_variables
         
     def set_material_properties(self,dim,mesh,mf,mat_prop):
         for key in self.mat_prop.keys():
@@ -64,4 +65,6 @@ class MfrontBehaviour:
                                               hypothesis=self.hypothesis,
                                               material_properties=self.mat_prop,
                                               rotation_matrix=self.rotation_matrix)
+        if self.save_variables==("all"):
+            self.save_variables = material.get_internal_state_variable_names()
         return material

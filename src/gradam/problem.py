@@ -274,15 +274,15 @@ class FractureProblem:
             prm['line_search'] =  'basic'
             #prm['linear_solver'] = 'mumps'
             prm['linear_solver'] = 'gmres' #'gmres' #'lu' # #'cg' #'gmres' #'cg' #'gmres'
-            prm['preconditioner'] = 'amg' #'amg' #'hypre_amg'
-            prm['krylov_solver']['nonzero_initial_guess'] = False # True
+            #prm['preconditioner'] = 'amg' #'amg' #'hypre_amg'
+            #prm['krylov_solver']['nonzero_initial_guess'] = False # True
             prm['maximum_iterations'] = 50
             tol = 5.0E-9 #5.0E-9
             prm['absolute_tolerance'] = tol
             prm['relative_tolerance'] = tol
             prm['solution_tolerance'] = tol
             #prm['report'] = False #True
-            prm['lu_solver']['symmetric'] = True #False
+            #prm['lu_solver']['symmetric'] = True #False
             #print(dict(prm))
             #print(dict(prm['krylov_solver']))
             #print(dict(prm['lu_solver']))
@@ -446,7 +446,7 @@ class FractureProblem:
                     self.newton_converged = True
                 except RuntimeError:
                     if self.rank == 0:
-                        print("    Newton solver diverged: dividing time step by 2")
+                        print("    Newton solver diverged: dividing time step by %s" % self.dtime_split_factor)
                     self.newton_converged = False
                     self.u.vector()[:] = u_old.vector()[:]
                     break
@@ -580,22 +580,12 @@ class FractureProblem:
             sigma.assign(local_project(self.sig,self.Vsig))
             self.results.write(sigma,t) 
         else:
-            #sigma = Function(self.Vsig,name="Stress")
-            #sigma.assign(local_project((1.-self.d)**2*self.sig,self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
-            #Vsig = TensorFunctionSpace(self.mesh, "DG", 0, shape=(3,3))
-            #sigma.assign(local_project(self.sig,Vsig))
-            #self.results.write(sigma,t)
             flux_names = self.solver_u.material.get_flux_names()
             stress_name = "MissingStress?"
             for name in flux_names:
                 if "Stress" in name:
                     stress_name = name
-            #sigma = Function(self.Vsig,name=stress_name)
-            ##sig = (1.-self.d)**2*self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True)
-            #sigma.assign(local_project(self.sig,self.Vsig))
             self.results.write(self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True),t)
-            #self.results.write(self.solver_u.get_flux(stress_name, project_on=("DG", 0), as_tensor=True),t)
-            #self.results.write((1.-self.d)**2*self.sig,t) 
         self.results.write(self.u,t)
         ##self.epspos.assign(local_project(dot(self.mat.R.T,dot(voigt2strain(self.mat.eps_crystal_pos),self.mat.R)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
         ##self.epsneg.assign(local_project(dot(self.mat.R.T,dot(voigt2strain(self.mat.eps_crystal_neg),self.mat.R)),self.Vsig)) #, solver_type='cg', preconditioner_type='hypre_amg'))
@@ -611,7 +601,8 @@ class FractureProblem:
             self.results.write(self.mat.mp["static_phase_field"],t)
         
         if (not self.mat.behaviour=='linear_elasticity'):
-            for var in self.mb.get_internal_state_variable_names():
+            #for var in self.mb.get_internal_state_variable_names():
+            for var in self.mat.mfront_behaviour.save_variables:
                 as_tensor = False
                 if ("Deformation" in var) or ("ElasticStrain"==var) or ("PlasticStrain"==var):
                     as_tensor = True
@@ -680,7 +671,7 @@ class FractureProblem:
                     if ((self.t + self.dtime) > self.final_time):
                         self.dtime = self.final_time - self.t
                     if (self.incr==0):
-                        self.dtime = 1.e-6 #0
+                        self.dtime = 1.e-6 #6 #0
                     for load in self.loads:
                         load[1].t = self.t + self.dtime
                     for uimp in self.Uimp:
