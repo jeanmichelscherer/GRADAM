@@ -17,7 +17,7 @@
 
 @Algorithm      NewtonRaphson;
 @Theta 1.;
-@Epsilon 1.e-14;
+@Epsilon 1.e-9;
 @IterMax 1000;
 
 @Brick FiniteStrainSingleCrystal{
@@ -92,6 +92,12 @@ damage.setGlossaryName("Damage");
 
 //@ExternalStateVariable real GB_distance;
 //GB_distance.setGlossaryName("DistanceToGrainBoundary");
+
+@AuxiliaryStateVariable real rho_tot;
+rho_tot.setEntryName("TotalDislocationDensity");
+
+@AuxiliaryStateVariable real gcum;
+gcum.setEntryName("AccumulatedPlasticSlip");
 
 @LocalVariable strain dPsi_d;
 
@@ -246,6 +252,8 @@ damage.setGlossaryName("Damage");
   auto dgmax = 0.;
   for (size_type i = 0; i != Nss; ++i) {
     dgmax = max(abs(dg[i]),dgmax);
+    rho_tot = rho0 + rho[i] + drho[i];
+    gcum += abs(dg[i]);
     //tau[i]  = ss.mu[i] | M;
     //Psi_pl += tau[i] * dg[i];
   }
