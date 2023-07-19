@@ -145,6 +145,8 @@ class FractureProblem:
         self.timings = True
         self.null_space_basis = None
         self.rigid_body_motion=[]
+        self.newton_converged = True
+        self.dtime_split_factor = 2
 
     class BCS():
         def __init__(self, Vu, Vd, facets):
@@ -263,21 +265,27 @@ class FractureProblem:
             '''
 
             ''''''
-            self.solver_u.solver = PETScSNESSolver('newtonls') #'newtontr') #'newtonls')
+            #self.solver_u.solver = PETScSNESSolver('newtonls') #'newtontr') #'newtonls')
+            self.solver_u.solver = PETScSNESSolver('newtontr') 
             prm = self.solver_u.solver.parameters
             #prm['nonlinear_solver'] = 'snes'
             #prm['line_search'] =  'bt' #'cp' #'cp' #'nleqerr' # 'bt' # 'basic' # 'l2'
-            prm['line_search'] =  'nleqerr'
+            #prm['line_search'] =  'nleqerr'
+            prm['line_search'] =  'basic'
             #prm['linear_solver'] = 'mumps'
-            prm['linear_solver'] = 'cg' #'gmres' #'cg' #'gmres'
-            prm['preconditioner'] = 'amg' #'hypre_amg'
+            prm['linear_solver'] = 'gmres' #'gmres' #'lu' # #'cg' #'gmres' #'cg' #'gmres'
+            prm['preconditioner'] = 'amg' #'amg' #'hypre_amg'
             prm['krylov_solver']['nonzero_initial_guess'] = False # True
-            prm['maximum_iterations'] = 200
+            prm['maximum_iterations'] = 50
             tol = 5.0E-9 #5.0E-9
             prm['absolute_tolerance'] = tol
             prm['relative_tolerance'] = tol
             prm['solution_tolerance'] = tol
             #prm['report'] = False #True
+            prm['lu_solver']['symmetric'] = True #False
+            #print(dict(prm))
+            #print(dict(prm['krylov_solver']))
+            #print(dict(prm['lu_solver']))
             ''''''
 
             self.load = self.set_load(self.u)
@@ -426,12 +434,23 @@ class FractureProblem:
                 self.sigma()
             else:
                 self.solver_u.dt = self.dtime
-                count = self.solver_u.solve(self.u.vector())
-                self.dissipated.vector().set_local(self.mb.data_manager.s1.dissipated_energies)
-                self.dissipated.vector().apply("insert")
-                self.stored.vector().set_local(self.mb.data_manager.s1.stored_energies)
-                self.stored.vector().apply("insert")
-                self.sigma()
+                try:
+                    u_old = Function(self.Vu, name='Displacement copy')
+                    u_old.vector()[:] = self.u.vector()[:]
+                    count = self.solver_u.solve(self.u.vector())
+                    self.dissipated.vector().set_local(self.mb.data_manager.s1.dissipated_energies)
+                    self.dissipated.vector().apply("insert")
+                    self.stored.vector().set_local(self.mb.data_manager.s1.stored_energies)
+                    self.stored.vector().apply("insert")
+                    self.sigma()
+                    self.newton_converged = True
+                except RuntimeError:
+                    if self.rank == 0:
+                        print("    Newton solver diverged: dividing time step by 2")
+                    self.newton_converged = False
+                    self.u.vector()[:] = u_old.vector()[:]
+                    break
+
             self.runtime_u += time() - tic_u
             if self.use_hybrid_solver:
                 self.niter_iterative += count[0]
@@ -654,16 +673,26 @@ class FractureProblem:
         while (self.t < self.final_time):
             tic = time()
             if (self.remesh == False):
-                self.dtime = max(self.dtime*self.desired_dincr/self.max_dincr,self.min_dtime)
-                self.dtime = min(self.dtime,self.max_dtime)
-                if ((self.t + self.dtime) > self.final_time):
-                    self.dtime = self.final_time - self.t
-                if (self.incr==0):
-                    self.dtime = 0
-                for load in self.loads:
-                    load[1].t = self.t + self.dtime
-                for uimp in self.Uimp:
-                    uimp.t = self.t + self.dtime
+                if (self.newton_converged == True):
+                    eta = min(self.desired_dincr/self.max_dincr,self.dtime_split_factor)
+                    self.dtime = max(self.dtime*eta,self.min_dtime)
+                    self.dtime = min(self.dtime,self.max_dtime)
+                    if ((self.t + self.dtime) > self.final_time):
+                        self.dtime = self.final_time - self.t
+                    if (self.incr==0):
+                        self.dtime = 1.e-6 #0
+                    for load in self.loads:
+                        load[1].t = self.t + self.dtime
+                    for uimp in self.Uimp:
+                        uimp.t = self.t + self.dtime
+                else:
+                    failed_dtime = self.dtime
+                    self.dtime = self.dtime / self.dtime_split_factor
+                    for load in self.loads:
+                        load[1].t = load[1].t - failed_dtime + self.dtime
+                    for uimp in self.Uimp:
+                        uimp.t = uimp.t - failed_dtime + self.dtime
+
             if self.rank == 0:
                 print( "Increment %i | Time : %.5e | dt : %.5e"%(self.incr,self.t+self.dtime,self.dtime))
 
@@ -671,7 +700,7 @@ class FractureProblem:
 
             if (self.use_remeshing):
                 self.remeshing()
-            if self.remesh == False:
+            if ((self.remesh == False) and (self.newton_converged == True)):
                 # Update lower bound to account for irreversibility
                 self.d_lb.assign(self.d)
                 self.max_dincr = norm(self.d.vector()-self.d_prev.vector(),'linf')
