@@ -84,7 +84,7 @@ Fp.setEntryName("PlasticPartOfTheDeformationGradient");
 @AuxiliaryStateVariable real nbact;
 nbact.setEntryName("NumberOfActiveSlipSystems");
 
-@Parameter real kres = 1e-12;
+@Parameter real kres = 1e-4;
 kres.setEntryName("ResidualStiffness");
 
 @ExternalStateVariable real damage;
