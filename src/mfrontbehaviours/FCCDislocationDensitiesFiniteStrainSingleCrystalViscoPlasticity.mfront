@@ -250,9 +250,10 @@ gcum.setEntryName("AccumulatedPlasticSlip");
 @UpdateAuxiliaryStateVariables {
   using size_type = unsigned short;
   auto dgmax = 0.;
+  rho_tot = 0.;
   for (size_type i = 0; i != Nss; ++i) {
     dgmax = max(abs(dg[i]),dgmax);
-    rho_tot = rho0 + rho[i] + drho[i];
+    rho_tot += rho0 + rho[i] + drho[i];
     gcum += abs(dg[i]);
     //tau[i]  = ss.mu[i] | M;
     //Psi_pl += tau[i] * dg[i];
