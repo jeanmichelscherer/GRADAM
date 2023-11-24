@@ -105,8 +105,6 @@ gcum.setEntryName("AccumulatedPlasticSlip");
 @Integrator{
 
   const auto gd = power<2>(1-(damage + ddamage)) + kres;
-
-  const unsigned short Nl = 4;
   
   const fsarray<28, double> im_coefficients = {
   //a_self, a_copl, a_hirt, a_lome, a_gli1, a_coli, a_gli2};
