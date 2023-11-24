@@ -1,7 +1,7 @@
 @DSL		ImplicitFiniteStrain;
-@Behaviour	FCCDislocationDensitiesFiniteStrainSingleCrystalViscoPlasticity;
+@Behaviour	BCCDislocationDensitiesFiniteStrainSingleCrystalViscoPlasticity;
 @Author Jérémy Hure, Jean-Michel Scherer;
-@Date 16 / 12 / 2022;
+@Date 24 / 11 / 2023;
 @Description {
     A dislocation-density based crystal plasticity model.
     Grain size effect accounted for in the evolution of dislocation densities.
