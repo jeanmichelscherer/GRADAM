@@ -34,6 +34,7 @@
 };
 
 @CrystalStructure BCC;
+//@SlidingSystem<1,1,1>{1,1,-2};
 @SlidingSystems{ <1,1,1>{0,1,-1}, <1,1,1>{1,1,-2} };
 
 @MaterialProperty real E;
@@ -115,14 +116,17 @@ gcum.setEntryName("AccumulatedPlasticSlip");
 
   const unsigned short Nl = 4;
   
+//  const fsarray<7, double> im_coefficients = {a_self, a_copl, a_hirt, a_lome, a_gli1, a_coli, a_gli2};
+/**/
   const fsarray<28, double> im_coefficients = {
   //a_self, a_copl, a_hirt, a_lome, a_gli1, a_coli, a_gli2};
-1., 0., 0., 0., 0., 0., 0.,
-0., 0., 0., 0., 0., 0.,
-0., 0., 0., 0., 0., 0.,
-0., 0., 0., 0., 0., 0.,
-0., 0., 0.
+1., 1., 1., 1., 1., 1., 1.,
+1., 1., 1., 1., 1., 1.,
+1., 1., 1., 1., 1., 1.,
+1., 1., 1., 1., 1., 1.,
+1., 1., 1.
 };
+/**/
   const auto im = ss.buildInteractionMatrix(im_coefficients);
   tfel::math::tmatrix<12,12,real> a; 
 
