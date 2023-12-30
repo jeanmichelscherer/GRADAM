@@ -27,35 +27,39 @@
   shifted_elastic_deformation_gradient : true
 };
 
-/*
-@Brick FiniteStrainSingleCrystal{
-  young_modulus1 : 1., //208000,
-  young_modulus2 : 1., //208000,
-  young_modulus3 : 1., //208000,
-  poisson_ratio12 : 0.3,
-  poisson_ratio23 : 0.3,
-  poisson_ratio13 : 0.3,
-  shear_modulus12 : 0.384615384615385, //80000,
-  shear_modulus23 : 0.384615384615385, //80000,
-  shear_modulus13 : 0.384615384615385, //80000
-  shifted_elastic_deformation_gradient : true
-};
-*/
-
 @CrystalStructure BCC;
-@SlipSystems{ <1,1,1>{0, 1, -1}, <1,1,1>{1, 1, -2} };
+@SlipSystems{ <1,1,1>{0,1,-1}, <1,1,1>{1,1,-2} };
 //mfront-query --interaction-matrix BCCMericCailletaudFiniteStrainSingleCrystalViscoPlasticity.mfront 
 //mfront-query --help-behaviour-queries-list BCCMericCailletaudFiniteStrainSingleCrystalViscoPlasticity.mfront
 
-// 28 independent coefficients
+// 28 independent coefficients, 1st and 22nd on diagonal
 //@InteractionMatrix{1, 1, 0.6, 1.8, 1.6, 12.3, 1.6};
-@InteractionMatrix{
+//@InteractionMatrix{
+/* identity matrix */
+/*
 1., 0., 0., 0., 0., 0., 0.,
 0., 0., 0., 0., 0., 0.,
 0., 0., 0., 0., 0., 0.,
-0., 0., 0., 0., 0., 0.,
+0., 0., 1., 0., 0., 0.,
 0., 0., 0.
 };
+*/
+
+/* Hoc & Forest */
+// a0 = 0.4 // 110 x 110 self
+// k1 * a0 = 1.*0.4 = 0.4 // 110 x 110 colinear
+// k2 * k1 * a0 = 1.15*1.*0.4 = 0.46 // 110 x 110 non-colinear
+// kp1 * a0 = 1.05*0.4 = 0.42 // 110 x 112 colinear
+// kp2 * kp1 * a0 = 1.05*1.05*0.4 = 0.441 // 110 x 112 non-colinear
+// ks0 * a0 = 1.3*0.4 = 0.52 // 112 x 112 self
+// ks0 * k1 * a0 = 1.3*1.*0.4 = 0.52 // 112 x 112 colinear
+// ks0 * k2 * k1 * a0 = 1.3*1.15*1.*0.4 = 0.598 // 112 x 112 non-colinear
+@InteractionMatrix{
+0.4, 0.46, 0.46, 0.4, 0.46, 0.46, 0.46, // 110 x 110
+0.42, 0.441, 0.441, 0.441, 0.441, 0.441, 0.42, 0.42, 0.441, 0.441, 0.441, 0.441, 0.441, 0.42, // 110 x 112
+0.52, 0.598, 0.598, 0.598, 0.598, 0.52, 0.598 // 112 x 112
+};
+/**/
 
 //@Parameter n = 1.; //10.0;
 //@Parameter K = 1.; //25.;
