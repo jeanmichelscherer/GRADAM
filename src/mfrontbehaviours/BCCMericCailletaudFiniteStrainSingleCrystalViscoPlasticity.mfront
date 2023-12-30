@@ -150,8 +150,8 @@ gcum.setEntryName("AccumulatedPlasticSlip");
   for (size_type i = 0; i != Nss; ++i) {
     //const auto tau = M | ss.mu[i];
     tau[i] = M | ss.mu[i];
-    auto r = tau0;
-    auto Q_GB_distance = Q + Q * (KS / dd);
+    auto r = tau0 + (KS/dd);
+    auto Q_GB_distance = Q; // + Q * (KS / dd);
     auto H_GB_distance = H; // + H * (KS / dd);
     for (size_type j = 0; j != Nss; ++j) {
       r += Q_GB_distance * m(i, j) * (1 - exp_bp[j]);
