@@ -126,6 +126,9 @@ kres.setEntryName("ResidualStiffness");
 @ExternalStateVariable real damage;
 damage.setGlossaryName("Damage");
 
+@AuxiliaryStateVariable real gcum;
+gcum.setEntryName("AccumulatedPlasticSlip");
+
 @InitLocalVariables{
   dd = max(GB_distance,1.); //e-9);
 }
@@ -193,6 +196,7 @@ damage.setGlossaryName("Damage");
         (dg[i] - d * a[i] * abs(dg[i])) / (1 + theta * d * abs(dg[i]));
     a[i] += da;
     dgmax = max(abs(dg[i]),dgmax);
+    gcum += abs(dg[i]);
   }
   nbact = 0.;
   if (dgmax > 0.) {
@@ -200,8 +204,6 @@ damage.setGlossaryName("Damage");
       nbact += abs(dg[i]) / dgmax;
     }
   }
-  //const auto gd = (1-damage) * (1-damage) + kres;
-  //sig = gd * sig;
   Psi_pl += dPsi_d;
   Fp = invert(Fe+tensor<3u,real>::Id())*F1;
 }
