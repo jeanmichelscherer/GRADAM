@@ -17,7 +17,7 @@
 
 @Algorithm      NewtonRaphson;
 @Theta 1.;
-@Epsilon 1.e-9;
+@Epsilon 1.e-12;
 @IterMax 1000;
 
 @Brick FiniteStrainSingleCrystal{
@@ -34,8 +34,36 @@
 };
 
 @CrystalStructure BCC;
-//@SlidingSystem<1,1,1>{1,1,-2};
-@SlidingSystems{ <1,1,1>{0,1,-1}, <1,1,1>{1,1,-2} };
+//@SlipSystem<1,1,1>{1,1,-2};
+@SlipSystems{ <1,1,1>{0,1,-1}, <1,1,1>{1,1,-2} };
+// 28 independent coefficients, 1st and 22nd on diagonal
+//@InteractionMatrix{1, 1, 0.6, 1.8, 1.6, 12.3, 1.6};
+/* identity matrix */
+/*
+@InteractionMatrix{
+1., 0., 0., 0., 0., 0., 0.,
+0., 0., 0., 0., 0., 0.,
+0., 0., 0., 0., 0., 0.,
+0., 0., 1., 0., 0., 0.,
+0., 0., 0.
+};
+*/
+
+/* Hoc & Forest */
+// a0 = 0.4 // 110 x 110 self
+// k1 * a0 = 1.*0.4 = 0.4 // 110 x 110 colinear
+// k2 * k1 * a0 = 1.15*1.*0.4 = 0.46 // 110 x 110 non-colinear
+// kp1 * a0 = 1.05*0.4 = 0.42 // 110 x 112 colinear
+// kp2 * kp1 * a0 = 1.05*1.05*0.4 = 0.441 // 110 x 112 non-colinear
+// ks0 * a0 = 1.3*0.4 = 0.52 // 112 x 112 self
+// ks0 * k1 * a0 = 1.3*1.*0.4 = 0.52 // 112 x 112 colinear
+// ks0 * k2 * k1 * a0 = 1.3*1.15*1.*0.4 = 0.598 // 112 x 112 non-colinear
+@InteractionMatrix{
+0.4, 0.46, 0.46, 0.4, 0.46, 0.46, 0.46, // 110 x 110
+0.42, 0.441, 0.441, 0.441, 0.441, 0.441, 0.42, 0.42, 0.441, 0.441, 0.441, 0.441, 0.441, 0.42, // 110 x 112
+0.52, 0.598, 0.598, 0.598, 0.598, 0.52, 0.598 // 112 x 112
+};
+/**/
 
 @MaterialProperty real E;
 @MaterialProperty real nu;
@@ -50,16 +78,17 @@
 @MaterialProperty real n; // = 15.;
 @MaterialProperty real K; // = 5.;
 @MaterialProperty real rho_ref; // = 6.45e-8;
-@MaterialProperty real a_self; // = 0.1405;
-@MaterialProperty real a_copl; // = 0.0500;
-@MaterialProperty real a_hirt; // = 0.0484;
-@MaterialProperty real a_lome; // = 0.1722;
-@MaterialProperty real a_gli1; // = 0.0885;
-@MaterialProperty real a_coli; // = 0.6972;
-@MaterialProperty real a_gli2; // = 0.1156;
+//@MaterialProperty real a_self; // = 0.1405;
+//@MaterialProperty real a_copl; // = 0.0500;
+//@MaterialProperty real a_hirt; // = 0.0484;
+//@MaterialProperty real a_lome; // = 0.1722;
+//@MaterialProperty real a_gli1; // = 0.0885;
+//@MaterialProperty real a_coli; // = 0.6972;
+//@MaterialProperty real a_gli2; // = 0.1156;
 @MaterialProperty real tau0; // = 10.;
 @MaterialProperty real mu; // = 75000.;
 @MaterialProperty real GB_distance;
+@MaterialProperty real alpha;
 
 @StateVariable real rho[Nss];
 //@AuxiliaryStateVariable real GB_distance;
@@ -106,9 +135,11 @@ gcum.setEntryName("AccumulatedPlasticSlip");
 @Integrator{
 
   const auto gd = power<2>(1-(damage + ddamage)) + kres;
+  //const auto& im = ss.him;
+  tfel::math::tmatrix<Nss,Nss,real> a = alpha * ss.him;
 
 //  const fsarray<7, double> im_coefficients = {a_self, a_copl, a_hirt, a_lome, a_gli1, a_coli, a_gli2};
-/**/
+/*
   const fsarray<28, double> im_coefficients = {
   //a_self, a_copl, a_hirt, a_lome, a_gli1, a_coli, a_gli2};
 1., 1., 1., 1., 1., 1., 1.,
@@ -117,10 +148,13 @@ gcum.setEntryName("AccumulatedPlasticSlip");
 1., 1., 1., 1., 1., 1.,
 1., 1., 1.
 };
-/**/
+
   const auto im = ss.buildInteractionMatrix(im_coefficients);
   tfel::math::tmatrix<12,12,real> a; 
+*/
 
+/*
+  tfel::math::tmatrix<Nss,Nss,real> a;
   real sum_a_rho[Nss];
   for(unsigned short i=0;i!=Nss;i++){
     sum_a_rho[i] = 0;
@@ -134,6 +168,10 @@ gcum.setEntryName("AccumulatedPlasticSlip");
         a(i,j) = im(i,j) * pow(0.14 + 0.86*(log(sqrt(sum_a_rho[i]))/log(sqrt(im(i,j)*rho_ref))),2);
     }
   }
+*/
+
+  //cout << im << endl;
+  //cout << a << endl;
   
   real sum_a_rho_obs[Nss];
   real sum_a_rho_cop[Nss];

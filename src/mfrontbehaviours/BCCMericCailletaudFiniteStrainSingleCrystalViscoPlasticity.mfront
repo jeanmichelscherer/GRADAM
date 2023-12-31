@@ -9,7 +9,7 @@
 @OrthotropicBehaviour;
 
 @Algorithm NewtonRaphson;
-@Epsilon 1.e-9;
+@Epsilon 1.e-12;
 @Theta 1.;
 @CompareToNumericalJacobian false; //true;
 //@JacobianComparisonCriterion 1.e-6;
