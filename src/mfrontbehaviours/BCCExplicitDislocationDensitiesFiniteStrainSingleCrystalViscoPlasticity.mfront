@@ -1,0 +1,289 @@
+@DSL		ImplicitFiniteStrain;
+@Behaviour	BCCExplicitDislocationDensitiesFiniteStrainSingleCrystalViscoPlasticity;
+@Author Jérémy Hure, Jean-Michel Scherer;
+@Date 16 / 12 / 2022;
+@Description {
+    A dislocation-density based crystal plasticity model.
+    Grain size effect accounted for in the evolution of dislocation densities.
+    Extended for brittle fracture with a phase-field approach. 
+}
+
+//@UMATGenerateMTestFileOnFailure true;
+//@UMATUseTimeSubStepping[umat] true;
+//@UMATMaximumSubStepping 100;
+
+@ModellingHypothesis Tridimensional;
+@OrthotropicBehaviour;
+
+@Algorithm      NewtonRaphson;
+@Theta 1.;
+@Epsilon 1.e-12;
+@IterMax 1000;
+
+@Brick FiniteStrainSingleCrystal{
+  young_modulus1 : "((1-damage)*(1-damage)+kres)*E", //208000,
+  young_modulus2 : "((1-damage)*(1-damage)+kres)*E", //208000,
+  young_modulus3 : "((1-damage)*(1-damage)+kres)*E", //208000,
+  poisson_ratio12 : "nu",
+  poisson_ratio23 : "nu",
+  poisson_ratio13 : "nu",
+  shear_modulus12 : "((1-damage)*(1-damage)+kres)*G", //0.384615384615385", //80000,
+  shear_modulus23 : "((1-damage)*(1-damage)+kres)*G", //0.384615384615385", //80000,
+  shear_modulus13 : "((1-damage)*(1-damage)+kres)*G", //0.384615384615385", //80000
+  shifted_elastic_deformation_gradient : true
+};
+
+@CrystalStructure BCC;
+//@SlipSystem<1,1,1>{1,1,-2};
+@SlipSystems{ <1,1,1>{0,1,-1}, <1,1,1>{1,1,-2} };
+// 28 independent coefficients, 1st and 22nd on diagonal
+//@InteractionMatrix{1, 1, 0.6, 1.8, 1.6, 12.3, 1.6};
+/* identity matrix */
+/*
+@InteractionMatrix{
+1., 0., 0., 0., 0., 0., 0.,
+0., 0., 0., 0., 0., 0.,
+0., 0., 0., 0., 0., 0.,
+0., 0., 1., 0., 0., 0.,
+0., 0., 0.
+};
+*/
+
+/* Hoc & Forest */
+// a0 = 0.4 // 110 x 110 self
+// k1 * a0 = 1.*0.4 = 0.4 // 110 x 110 colinear
+// k2 * k1 * a0 = 1.15*1.*0.4 = 0.46 // 110 x 110 non-colinear
+// kp1 * a0 = 1.05*0.4 = 0.42 // 110 x 112 colinear
+// kp2 * kp1 * a0 = 1.05*1.05*0.4 = 0.441 // 110 x 112 non-colinear
+// ks0 * a0 = 1.3*0.4 = 0.52 // 112 x 112 self
+// ks0 * k1 * a0 = 1.3*1.*0.4 = 0.52 // 112 x 112 colinear
+// ks0 * k2 * k1 * a0 = 1.3*1.15*1.*0.4 = 0.598 // 112 x 112 non-colinear
+@InteractionMatrix{
+0.4, 0.46, 0.46, 0.4, 0.46, 0.46, 0.46, // 110 x 110
+0.42, 0.441, 0.441, 0.441, 0.441, 0.441, 0.42, 0.42, 0.441, 0.441, 0.441, 0.441, 0.441, 0.42, // 110 x 112
+0.52, 0.598, 0.598, 0.598, 0.598, 0.52, 0.598 // 112 x 112
+};
+/**/
+
+@MaterialProperty real E;
+@MaterialProperty real nu;
+@MaterialProperty real G;
+
+@MaterialProperty real rho0;
+@MaterialProperty real y; //Gc;
+@MaterialProperty real KS;
+
+@MaterialProperty real Kobs; // = 11.9;
+@MaterialProperty real Kcop; // = 93.2;
+@MaterialProperty real n; // = 15.;
+@MaterialProperty real K; // = 5.;
+@MaterialProperty real rho_ref; // = 6.45e-8;
+//@MaterialProperty real a_self; // = 0.1405;
+//@MaterialProperty real a_copl; // = 0.0500;
+//@MaterialProperty real a_hirt; // = 0.0484;
+//@MaterialProperty real a_lome; // = 0.1722;
+//@MaterialProperty real a_gli1; // = 0.0885;
+//@MaterialProperty real a_coli; // = 0.6972;
+//@MaterialProperty real a_gli2; // = 0.1156;
+@MaterialProperty real tau0; // = 10.;
+@MaterialProperty real mu; // = 75000.;
+@MaterialProperty real GB_distance;
+@MaterialProperty real alpha;
+
+@AuxiliaryStateVariable real rho[Nss];
+@AuxiliaryStateVariable real incr_rho[Nss];
+//@AuxiliaryStateVariable real GB_distance;
+
+@LocalVariable real dd;
+
+@AuxiliaryStateVariable stress tau[Nss];
+tau.setEntryName("ResolvedShearStress");
+
+@AuxiliaryStateVariable strain Psi_pl;
+Psi_pl.setEntryName("DissipatedEnergy");
+
+@AuxiliaryStateVariable tensor<3u,real> Fp;
+Fp.setEntryName("PlasticPartOfTheDeformationGradient");
+
+@AuxiliaryStateVariable real nbact;
+nbact.setEntryName("NumberOfActiveSlipSystems");
+
+@Parameter real kres = 1e-4;
+kres.setEntryName("ResidualStiffness");
+
+@ExternalStateVariable real damage;
+damage.setGlossaryName("Damage");
+
+//@ExternalStateVariable real GB_distance;
+//GB_distance.setGlossaryName("DistanceToGrainBoundary");
+
+@AuxiliaryStateVariable real rho_tot;
+rho_tot.setEntryName("TotalDislocationDensity");
+
+@AuxiliaryStateVariable real gcum;
+gcum.setEntryName("AccumulatedPlasticSlip");
+
+@LocalVariable strain dPsi_d;
+
+/**/
+@InitLocalVariables{
+  //tau0 = 43 - 0.055*T;
+  //mu = (((-3e-5)*T*T) - (5.6e-3)*T + 88)*1000;
+  dd = max(GB_distance,1.); //e-9);
+}
+/**/
+
+@Integrator{
+
+  const auto gd = power<2>(1-(damage + ddamage)) + kres;
+  //const auto& im = ss.him;
+  tfel::math::tmatrix<Nss,Nss,real> a = alpha * ss.him;
+
+//  const fsarray<7, double> im_coefficients = {a_self, a_copl, a_hirt, a_lome, a_gli1, a_coli, a_gli2};
+/*
+  const fsarray<28, double> im_coefficients = {
+  //a_self, a_copl, a_hirt, a_lome, a_gli1, a_coli, a_gli2};
+1., 1., 1., 1., 1., 1., 1.,
+1., 1., 1., 1., 1., 1.,
+1., 1., 1., 1., 1., 1.,
+1., 1., 1., 1., 1., 1.,
+1., 1., 1.
+};
+
+  const auto im = ss.buildInteractionMatrix(im_coefficients);
+  tfel::math::tmatrix<12,12,real> a; 
+*/
+
+/*
+  tfel::math::tmatrix<Nss,Nss,real> a;
+  real sum_a_rho[Nss];
+  for(unsigned short i=0;i!=Nss;i++){
+    sum_a_rho[i] = 0;
+    for(unsigned short j=0;j!=Nss;j++){
+        sum_a_rho[i] += im(i,j) * (rho0 + rho[j]); // + theta*drho[j]);
+    }
+  }
+
+  for(unsigned short i=0;i!=Nss;i++){
+    for(unsigned short j=0;j!=Nss;j++){
+        a(i,j) = im(i,j) * pow(0.14 + 0.86*(log(sqrt(sum_a_rho[i]))/log(sqrt(im(i,j)*rho_ref))),2);
+    }
+  }
+*/
+
+  //cout << im << endl;
+  //cout << a << endl;
+  
+  real sum_a_rho_obs[Nss];
+  real sum_a_rho_cop[Nss];
+
+  for(unsigned short i=0;i!=Nss;i++){
+    sum_a_rho_obs[i] = 0.;
+    sum_a_rho_cop[i] = 0.;
+    for(unsigned short j=0;j!=Nss;j++){
+      if (ss.areCoplanar(i,j)){
+         sum_a_rho_cop[i] += a(i,j)*(rho0 + rho[j]); // + theta*drho[j]);
+      } else {
+         sum_a_rho_obs[i] += a(i,j)*(rho0 + rho[j]); // + theta*drho[j]);
+      }
+    }
+  }
+
+  real dp[Nss];
+  real sgndp[Nss];
+  real sgn[Nss];
+  real Hsi[Nss];
+  for(unsigned short i=0;i!=Nss;i++){
+    const stress  tauc = gd * (tau0 + mu*sqrt(sum_a_rho_cop[i] + sum_a_rho_obs[i]));
+    //const stress  tau  = ss.mu[i] | M;
+    tau[i]  = ss.mu[i] | M;
+    sgn[i]  = (tau[i] > 0) ? 1 : -1;
+    dp[i]   = abs(dg[i]);
+    sgndp[i] = (dg[i] > 0) ? 1 : ((dg[i] < 0) ? -1 : 0);
+    const stress  Dtau = abs(tau[i]) - tauc;
+    Hsi[i] = dt*pow(max(Dtau,0.)/K,n-1)*(n/K);
+
+    //if ( Dtau > 1.1*K ) { return false; }
+
+    real dgi = dt*pow(max(Dtau,0.)/K,n)*sgn[i];
+    fg[i] -= dgi;
+    
+    //frho[i] =(drho[i]-dp[i]*(max(sqrt(sum_a_rho_obs[i])/Kobs + sqrt(sum_a_rho_cop[i])/Kcop,KS/(dd)) - y*(rho0+rho[i]+theta*drho[i])))/rho0; 
+    if (dp[i]<1.) {
+        incr_rho[i] = dp[i]*(max(sqrt(sum_a_rho_obs[i])/Kobs + sqrt(sum_a_rho_cop[i])/Kcop,KS/(dd)) - y*(rho0+rho[i]));
+        //cout << "drho[" << i << "] = " << incr_rho[i] << endl;
+        //cout << "max(sqrt(sum_a_rho_obs[i])/Kobs + sqrt(sum_a_rho_cop[i])/Kcop,KS/(dd)) = " << max(sqrt(sum_a_rho_obs[i])/Kobs + sqrt(sum_a_rho_cop[i])/Kcop,KS/(dd)) << endl;
+        //cout << "y*(rho0+rho[i]) = " << y*(rho0+rho[i]) << endl;
+        //cout << "dp[i] = " << dp[i] << endl;
+    }
+  }
+
+  dPsi_d = 0.;
+  for(unsigned short i=0;i!=Nss;i++){
+    tfel::math::tmatrix<12,12,real> sqrt_sum_a_rho_prime;        
+    tfel::math::tmatrix<12,12,real> sqrt_sum_a_rho_obs_prime;
+    tfel::math::tmatrix<12,12,real> sqrt_sum_a_rho_cop_prime;
+    
+    for(unsigned short j=0;j!=Nss;j++){
+      if (ss.areCoplanar(i,j)){
+        sqrt_sum_a_rho_cop_prime(i,j) = (a(i,j) / 2) / sqrt(sum_a_rho_cop[i]);
+        sqrt_sum_a_rho_obs_prime(i,j) = 0;
+      } else {
+        sqrt_sum_a_rho_cop_prime(i,j) = 0;
+        sqrt_sum_a_rho_obs_prime(i,j) = (a(i,j) / 2) / sqrt(sum_a_rho_obs[i]);
+      }
+      sqrt_sum_a_rho_prime(i,j) = (a(i,j) / 2) / sqrt(sum_a_rho_obs[i] + sum_a_rho_cop[i]);
+    }
+    
+    dfg_ddeel(i) = -Hsi[i]*(ss.mu[i]|dM_ddeel); 
+    for(unsigned short j=0;j!=Nss;j++){
+      //dfg_ddrho(i,j) = gd*sgn[i]*Hsi[i]*mu*theta*sqrt_sum_a_rho_prime(i,j);
+      dfg_ddg(i,j) = ((i == j) ? 1 : 0);
+      //if ((sqrt(sum_a_rho_obs[i])/Kobs + sqrt(sum_a_rho_cop[i])/Kcop) > KS/(dd)){
+         //dfrho_ddg(i,j) = ((i == j) ? (-sgndp[i]*(sqrt(sum_a_rho_obs[i])/Kobs + sqrt(sum_a_rho_cop[i])/Kcop - y*(rho0+rho[i]+theta*drho[i])))/rho0 : 0); 
+         //dfrho_ddrho(i,j) = (((i == j) ? (1 + dp[i]*y) : 0) - dp[i]*(sqrt_sum_a_rho_obs_prime(i,j)/Kobs + sqrt_sum_a_rho_cop_prime(i,j)/Kcop))/rho0;
+      //} else {
+         //dfrho_ddg(i,j) = ((i == j) ? (-sgndp[i]*((KS/(dd)) - y*(rho0+rho[i]+theta*drho[i])))/rho0 : 0);
+         //dfrho_ddrho(i,j) = (((i == j) ? (1 + dp[i]*y) : 0) - dp[i]*(KS/(dd)))/rho0;
+      //}
+    }
+    dPsi_d += tau[i] * dg[i]; 
+  }
+
+}
+
+@UpdateAuxiliaryStateVariables {
+  using size_type = unsigned short;
+  auto dgmax = 0.;
+  rho_tot = 0.;
+
+  for (size_type i = 0; i != Nss; ++i) {
+    dgmax = max(abs(dg[i]),dgmax);
+    //cout << "drho[" << i << "] = " << incr_rho[i] << endl;
+    rho[i] += incr_rho[i];
+    rho_tot += rho0 + rho[i]; // + drho[i];
+    gcum += abs(dg[i]);
+    //tau[i]  = ss.mu[i] | M;
+    //Psi_pl += tau[i] * dg[i];
+  }
+  nbact = 0.;
+  if (dgmax > 0.) {
+    for (size_type i = 0; i != Nss; ++i) {
+      nbact += abs(dg[i]) / dgmax;
+    }
+  }
+  Psi_pl += dPsi_d;
+  Fp = invert(Fe+tensor<3u,real>::Id())*F1;
+}
+
+@DissipatedEnergy{
+  const auto gd = power<2>(1-(damage+ddamage)) + kres;
+  //Psi_d += (Psi_pl / gd);
+  Psi_d += (dPsi_d / gd);
+}
+
+@InternalEnergy {
+  const auto gd = power<2>(1-(damage+ddamage)) + kres;
+  Psi_s = (0.5 / gd) * (convertCauchyStressToSecondPiolaKirchhoffStress(sig, Fe+tensor<3u,real>::Id()) | eel);
+}
+
